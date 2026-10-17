@@ -10,7 +10,7 @@ import {
   TerrainConfig,
   TimeOfDay,
 } from './types';
-import { generateTerrainData, getSampledHeightAt } from './core/terrainGen';
+import { generateTerrainData, getSampledHeightAt, generateProceduralTrails } from './core/terrainGen';
 import { STANDARD_PALETTE } from './core/modelFactory';
 import {
   exportHeightmapPNG,
@@ -31,14 +31,23 @@ const isMobileInitial = typeof window !== 'undefined' && (
 
 const DEFAULT_TERRAIN_CONFIG: TerrainConfig = {
   seed: 2026,
-  size: 100,
+  size: 110,
   resolution: isMobileInitial ? 44 : 52, // optimized 44x44 for silky smooth 60fps on mobile
   heightScale: 28,
   roughness: 1.2,
   waterLevel: 2,
   islandFalloff: true,
+  islandCoverage: 1.45, // broad, expansive island covering generous map area
+  oceanScale: 1.9,      // balanced ocean framing without vast empty void
   terraceSteps: 0,
   biome: 'archipelago',
+  smoothShading: true,
+  pathStyle: 'blend_natural',
+  pathBlendRatios: {
+    stone: 40,
+    gravel: 35,
+    dirt: 25,
+  },
 };
 
 export default function App() {
@@ -52,12 +61,19 @@ export default function App() {
   const [isDockCollapsed, setIsDockCollapsed] = useState(false);
   const [performanceMode, setPerformanceMode] = useState<PerformanceMode>(isMobileInitial ? 'mobile' : 'balanced');
   const [fps, setFps] = useState<number>(60);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [brushSettings, setBrushSettings] = useState<BrushSettings>({
     mode: 'select',
     radius: 12,
     intensity: 1.2,
     flattenHeight: 5,
+    pathStyle: 'blend_natural',
+    pathBlendRatios: {
+      stone: 40,
+      gravel: 35,
+      dirt: 25,
+    },
   });
 
   // Undo / Redo history stacks (tracking heightmaps + placedObjects)
@@ -249,10 +265,6 @@ export default function App() {
 
   // Sculpting brush heightmap change
   const handleHeightmapChange = (newHeights: Float32Array) => {
-    // Re-generate vertex colors based on modified heights
-    const count = terrainConfig.resolution * terrainConfig.resolution;
-    const newColors = new Float32Array(count * 3);
-
     // Copy heights & update
     setTerrainData((prev) => ({
       ...prev,
@@ -275,6 +287,100 @@ export default function App() {
         };
       })
     );
+  };
+
+  // Both heights & colors changed (e.g., path carving brush)
+  const handleTerrainBuffersChange = (newHeights: Float32Array, newColors: Float32Array) => {
+    setTerrainData((prev) => ({
+      ...prev,
+      heights: newHeights,
+      colors: newColors,
+    }));
+
+    // Re-ground placed objects in real-time
+    setPlacedObjects((prev) =>
+      prev.map((obj) => {
+        const newY = getSampledHeightAt(
+          obj.position[0],
+          obj.position[2],
+          newHeights,
+          terrainConfig.size,
+          terrainConfig.resolution
+        );
+        return {
+          ...obj,
+          position: [obj.position[0], newY, obj.position[2]],
+        };
+      })
+    );
+  };
+
+  // Auto-generate scenic organic trail with multi-material cobblestone, gravel, and dirt blends
+  const handleBuildProceduralTrail = () => {
+    const newHeights = new Float32Array(terrainData.heights);
+    const newColors = new Float32Array(terrainData.colors);
+
+    // Prioritize existing user-placed buildings and landmarks as primary trail anchors
+    const buildingKeyLocations = placedObjects
+      .filter((o) =>
+        o.category === 'building' ||
+        o.type.includes('cottage') ||
+        o.type.includes('windmill') ||
+        o.type.includes('lighthouse') ||
+        o.type.includes('skyscraper') ||
+        o.type.includes('dome')
+      )
+      .map((o) => ({ x: o.position[0], z: o.position[2] }));
+
+    const result = generateProceduralTrails(
+      newHeights,
+      newColors,
+      terrainConfig,
+      buildingKeyLocations.length >= 2 ? buildingKeyLocations : undefined
+    );
+
+    const newPlaced: PlacedObject[] = result.propPositions.map((p, idx) => ({
+      id: `trail_prop_${Date.now()}_${idx}`,
+      name:
+        p.type === 'street_lamp'
+          ? 'Trail Lantern'
+          : p.type === 'wooden_boardwalk'
+          ? 'Boardwalk Walkway'
+          : p.type === 'trail_signpost'
+          ? 'Trail Signpost'
+          : p.type === 'cobblestone_path'
+          ? 'Cobblestone Pavers'
+          : 'Stepping Stones',
+      type: p.type,
+      category: p.type === 'street_lamp' ? 'prop' : 'path',
+      position: [p.x, p.y, p.z],
+      rotation: [0, p.rotationY, 0],
+      scale: [1, 1, 1],
+    }));
+
+    // Cleanly replace any previous auto-generated trail props to prevent clutter & frame drops
+    const nonTrailObjects = placedObjects.filter((o) => !o.id.startsWith('trail_prop_'));
+    const combinedObjects = [...nonTrailObjects, ...newPlaced];
+
+    setPlacedObjects(combinedObjects);
+    setTerrainData((prev) => ({
+      ...prev,
+      heights: newHeights,
+      colors: newColors,
+    }));
+    pushHistory({
+      heights: newHeights,
+      colors: newColors,
+      objects: combinedObjects,
+    });
+
+    // Provide visual confirmation toast
+    setToastMessage(
+      `Jalan setapak pulau berhasil dibangun! (${result.segments.length} segmen terhubung dengan tekstur batu, kerikil & tanah)`
+    );
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4500);
   };
 
   // Object placed via click
@@ -472,10 +578,13 @@ export default function App() {
         heights={terrainData.heights}
         colors={terrainData.colors}
         onHeightmapChange={handleHeightmapChange}
+        onTerrainBuffersChange={handleTerrainBuffersChange}
         placedObjects={placedObjects}
         onObjectPlaced={handleObjectPlaced}
         onObjectSelected={(obj) => setSelectedObjectId(obj?.id || null)}
-        onObjectUpdate={handleUpdateSelectedObject}
+        onObjectUpdate={(id, updates) =>
+          setPlacedObjects((prev) => prev.map((o) => (o.id === id ? { ...o, ...updates } : o)))
+        }
         selectedObjectId={selectedObjectId}
         activePaletteItem={activePaletteItem}
         brushSettings={brushSettings}
@@ -521,6 +630,7 @@ export default function App() {
         onAutoPopulateBiome={(count) =>
           populateBiome(terrainConfig.biome, count, terrainData.heights, terrainConfig.seed)
         }
+        onBuildTrail={handleBuildProceduralTrail}
         onClearAllObjects={() => {
           setPlacedObjects([]);
           setSelectedObjectId(null);
@@ -540,6 +650,16 @@ export default function App() {
         performanceMode={performanceMode}
         onUpdatePerformanceMode={handleUpdatePerformanceMode}
       />
+
+      {/* Floating Status Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300">
+          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900/95 border border-emerald-500/70 text-slate-100 text-xs font-semibold shadow-2xl backdrop-blur-md">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

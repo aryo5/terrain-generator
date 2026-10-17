@@ -6,6 +6,16 @@ export type BiomeType =
   | 'oasis'
   | 'lowpoly';
 
+export type PathMaterial =
+  | 'stone'
+  | 'gravel'
+  | 'dirt'
+  | 'blend_stone_gravel'
+  | 'blend_dirt_gravel'
+  | 'blend_natural'
+  | 'custom_blend'
+  | 'cyber';
+
 export interface TerrainConfig {
   seed: number;
   size: number;          // e.g. 140 world units (expanded)
@@ -17,7 +27,14 @@ export interface TerrainConfig {
   terraceSteps: number;  // 0 = continuous, 4-12 = stylized stepped plateaus
   biome: BiomeType;
   smoothShading: boolean;// true = smooth organic shading (no triangles), false = low-poly faceted
-  pathStyle: 'dirt' | 'stone' | 'cyber';
+  pathStyle: PathMaterial;
+  pathBlendRatios?: {
+    stone: number;
+    gravel: number;
+    dirt: number;
+  };
+  islandCoverage?: number; // 0.6 = small atoll, 1.4 = wide island, 2.0 = sprawling continent
+  oceanScale?: number;    // water plane multiplier relative to terrain size
 }
 
 export type ObjectCategory = 'building' | 'foliage' | 'prop' | 'cyber' | 'fantasy' | 'custom' | 'path';
@@ -59,7 +76,12 @@ export interface BrushSettings {
   radius: number;
   intensity: number;
   flattenHeight: number;
-  pathStyle: 'dirt' | 'stone' | 'cyber';
+  pathStyle: PathMaterial;
+  pathBlendRatios?: {
+    stone: number;
+    gravel: number;
+    dirt: number;
+  };
 }
 
 export type TimeOfDay = 'day' | 'golden' | 'cyberpunk' | 'sunset' | 'night';

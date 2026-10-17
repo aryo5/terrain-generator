@@ -29,6 +29,11 @@ import {
   Landmark,
   Zap,
   Lightbulb,
+  Route,
+  Footprints,
+  MapPin,
+  SlidersHorizontal,
+  Palette,
 } from 'lucide-react';
 import {
   BiomeType,
@@ -42,6 +47,7 @@ import {
   TerrainConfig,
 } from '../types';
 import { STANDARD_PALETTE } from '../core/modelFactory';
+import { PATH_MATERIAL_PRESETS } from '../core/terrainGen';
 
 interface ControlDockProps {
   terrainConfig: TerrainConfig;
@@ -54,6 +60,7 @@ interface ControlDockProps {
   customAssets: CustomAssetRecord[];
   onUploadFile: (file: File) => Promise<void>;
   onAutoPopulateBiome: (density: number) => void;
+  onBuildTrail?: () => void;
   onClearAllObjects: () => void;
   placedObjects: PlacedObject[];
   selectedObject: PlacedObject | null;
@@ -87,6 +94,9 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Landmark,
   Zap,
   Lightbulb,
+  Route,
+  Footprints,
+  MapPin,
 };
 
 export const ControlDock: React.FC<ControlDockProps> = ({
@@ -100,6 +110,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   customAssets,
   onUploadFile,
   onAutoPopulateBiome,
+  onBuildTrail,
   onClearAllObjects,
   placedObjects,
   selectedObject,
@@ -444,7 +455,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
             </div>
 
             {/* Terrain Procedural Parameters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-800/40 p-3 rounded-xl border border-slate-700/60">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 bg-slate-800/40 p-3 rounded-xl border border-slate-700/60">
               {/* Seed Control */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">World Seed</label>
@@ -466,11 +477,48 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                 </div>
               </div>
 
+              {/* Land Coverage / Luas Pulau */}
+              <div>
+                <div className="flex justify-between text-xs font-semibold text-slate-300 mb-1">
+                  <span>Luas Daratan</span>
+                  <span className="text-emerald-400 font-mono font-bold">
+                    {Math.round((terrainConfig.islandCoverage ?? 1.45) * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.6"
+                  max="2.2"
+                  step="0.1"
+                  value={terrainConfig.islandCoverage ?? 1.45}
+                  onChange={(e) => onUpdateTerrainConfig({ islandCoverage: parseFloat(e.target.value) })}
+                  className="w-full accent-emerald-500 cursor-pointer"
+                  title="Luas jangkauan daratan pulau"
+                />
+              </div>
+
+              {/* World Size (Ukuran Dunia) */}
+              <div>
+                <div className="flex justify-between text-xs font-semibold text-slate-300 mb-1">
+                  <span>Ukuran Dunia</span>
+                  <span className="text-slate-400 font-mono">{terrainConfig.size}m</span>
+                </div>
+                <input
+                  type="range"
+                  min="80"
+                  max="180"
+                  step="10"
+                  value={terrainConfig.size}
+                  onChange={(e) => onUpdateTerrainConfig({ size: parseFloat(e.target.value) })}
+                  className="w-full accent-emerald-500 cursor-pointer"
+                />
+              </div>
+
               {/* Elevation / Height Scale */}
               <div>
                 <div className="flex justify-between text-xs font-semibold text-slate-300 mb-1">
                   <span>Height Scale</span>
-                  <span className="text-slate-400">{terrainConfig.heightScale}m</span>
+                  <span className="text-slate-400 font-mono">{terrainConfig.heightScale}m</span>
                 </div>
                 <input
                   type="range"
@@ -487,7 +535,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
               <div>
                 <div className="flex justify-between text-xs font-semibold text-slate-300 mb-1">
                   <span>Roughness</span>
-                  <span className="text-slate-400">{terrainConfig.roughness.toFixed(1)}</span>
+                  <span className="text-slate-400 font-mono">{terrainConfig.roughness.toFixed(1)}</span>
                 </div>
                 <input
                   type="range"
@@ -504,7 +552,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
               <div>
                 <div className="flex justify-between text-xs font-semibold text-slate-300 mb-1">
                   <span>Water Elevation</span>
-                  <span className="text-slate-400">{terrainConfig.waterLevel}m</span>
+                  <span className="text-slate-400 font-mono">{terrainConfig.waterLevel}m</span>
                 </div>
                 <input
                   type="range"
@@ -518,8 +566,33 @@ export const ControlDock: React.FC<ControlDockProps> = ({
               </div>
             </div>
 
-            {/* Stepped Terraces & Falloff Switches */}
+            {/* Quick Land Size Presets & Falloff Switches */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-slate-400 font-medium">Preset Daratan:</span>
+                <button
+                  type="button"
+                  onClick={() => onUpdateTerrainConfig({ islandCoverage: 0.85, waterLevel: 3 })}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors"
+                >
+                  🏝️ Atol Kecil
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateTerrainConfig({ islandCoverage: 1.45, waterLevel: 2 })}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 text-xs transition-colors"
+                >
+                  🌲 Pulau Luas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateTerrainConfig({ islandCoverage: 2.1, islandFalloff: true, waterLevel: 1 })}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors"
+                >
+                  🗺️ Benua Besar
+                </button>
+              </div>
+
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -528,7 +601,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                     onChange={(e) => onUpdateTerrainConfig({ islandFalloff: e.target.checked })}
                     className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
                   />
-                  <span className="text-xs text-slate-300 font-medium">Island Radial Ocean Falloff</span>
+                  <span className="text-xs text-slate-300 font-medium">Island Edge Falloff</span>
                 </label>
 
                 <div className="flex items-center gap-2">
@@ -544,26 +617,27 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                     <option value="12">12 Steps (Fine Terraces)</option>
                   </select>
                 </div>
-              </div>
 
-              <button
-                type="button"
-                onClick={onRegenerateTerrain}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors shadow-md"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Re-Synthesize World</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={onRegenerateTerrain}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors shadow-md"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Re-Synthesize World</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* TAB 2: Sculpt Brush */}
+        {/* TAB 2: Sculpt Brush & Trails */}
         {activeTab === 'sculpt' && (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 {[
+                  { mode: 'sculpt-path', label: 'Jalan Setapak 🪨', badge: 'Path' },
                   { mode: 'sculpt-raise', label: 'Raise ⛰️' },
                   { mode: 'sculpt-lower', label: 'Lower 🕳️' },
                   { mode: 'sculpt-flatten', label: 'Flatten 📐' },
@@ -573,21 +647,268 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                     key={b.mode}
                     type="button"
                     onClick={() => onUpdateBrushSettings({ mode: b.mode as BrushMode })}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
                       brushSettings.mode === b.mode
                         ? 'bg-emerald-500 text-white shadow-md'
                         : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
                     }`}
                   >
-                    {b.label}
+                    <span>{b.label}</span>
                   </button>
                 ))}
               </div>
 
-              <p className="text-xs text-slate-400">
-                Click or drag across the terrain to sculpt in real-time.
-              </p>
+              {/* Action Button: Auto Build Scenic Trail */}
+              {onBuildTrail && (
+                <button
+                  type="button"
+                  onClick={onBuildTrail}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md active:scale-95"
+                  title="Bangun jalan setapak berpaving batu, jembatan kayu & lentera secara otomatis melintasi pulau"
+                >
+                  <Route className="w-4 h-4 text-emerald-200" />
+                  <span>Bangun Jalan Setapak Otomatis 🚶‍♂️</span>
+                </button>
+              )}
             </div>
+
+            {/* If in Path Mode: Show Pathway Texture Brush with Multi-Material Blend controls */}
+            {brushSettings.mode === 'sculpt-path' && (
+              <div className="p-3 rounded-xl bg-slate-800/90 border border-emerald-500/50 shadow-lg space-y-3">
+                {/* Header info */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700/70 pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                      <Footprints className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
+                        <span>Path Texture Brush</span>
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          Multi-Material Blending
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Oleskan kuas di pulau untuk mengukir jalan setapak bertekstur material tanah (dirt), batu (stone), & kerikil (gravel).
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Active Blend Badge */}
+                  <div className="flex items-center gap-1.5 text-xs bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-700">
+                    <span className="text-slate-400 text-[10px] uppercase font-semibold">Active:</span>
+                    <span className="font-bold text-emerald-400">
+                      {PATH_MATERIAL_PRESETS.find((p) => p.id === (brushSettings.pathStyle || terrainConfig.pathStyle))?.name || 'Custom Mix'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Preset Material Blends */}
+                <div>
+                  <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                    <Palette className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Preset Material Blend:</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5">
+                    {PATH_MATERIAL_PRESETS.map((style) => {
+                      const isCurrent = (brushSettings.pathStyle || terrainConfig.pathStyle) === style.id;
+                      return (
+                        <button
+                          key={style.id}
+                          type="button"
+                          onClick={() => {
+                            onUpdateBrushSettings({
+                              pathStyle: style.id,
+                              pathBlendRatios: { ...style.blendRatios },
+                            });
+                            onUpdateTerrainConfig({
+                              pathStyle: style.id,
+                              pathBlendRatios: { ...style.blendRatios },
+                            });
+                          }}
+                          className={`p-2 rounded-lg border text-left transition-all ${
+                            isCurrent
+                              ? 'bg-slate-700/90 border-emerald-400 ring-2 ring-emerald-500/30 shadow'
+                              : 'bg-slate-800/60 border-slate-700/80 hover:bg-slate-700 hover:border-slate-600'
+                          }`}
+                          title={`${style.name}: ${style.description}`}
+                        >
+                          <div className="text-[11px] font-bold text-slate-200 truncate">{style.name}</div>
+                          <div className="text-[9px] text-slate-400 truncate">{style.subtitle}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Interactive Multi-Material Blend Mixer */}
+                <div className="bg-slate-900/70 p-3 rounded-xl border border-slate-700/80 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-xs font-bold text-slate-200">Material Blend Mixer (Dirt · Stone · Gravel)</span>
+                    </div>
+
+                    {/* Quick Mix Presets */}
+                    <div className="flex items-center gap-1 text-[10px]">
+                      <span className="text-slate-400">Quick Mix:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const r = { stone: 75, gravel: 20, dirt: 5 };
+                          onUpdateBrushSettings({ pathStyle: 'custom_blend', pathBlendRatios: r });
+                          onUpdateTerrainConfig({ pathStyle: 'custom_blend', pathBlendRatios: r });
+                        }}
+                        className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                      >
+                        Plaza Cobble
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const r = { stone: 35, gravel: 40, dirt: 25 };
+                          onUpdateBrushSettings({ pathStyle: 'custom_blend', pathBlendRatios: r });
+                          onUpdateTerrainConfig({ pathStyle: 'custom_blend', pathBlendRatios: r });
+                        }}
+                        className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                      >
+                        Natural Trail
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const r = { stone: 10, gravel: 40, dirt: 50 };
+                          onUpdateBrushSettings({ pathStyle: 'custom_blend', pathBlendRatios: r });
+                          onUpdateTerrainConfig({ pathStyle: 'custom_blend', pathBlendRatios: r });
+                        }}
+                        className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                      >
+                        Country Dirt
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 3 Material Sliders */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Stone Slider */}
+                    <div className="p-2 rounded-lg bg-slate-800/60 border border-slate-700/60">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="flex items-center gap-1.5 font-semibold text-slate-200">
+                          <span className="w-2.5 h-2.5 rounded-full bg-slate-400 inline-block shadow-sm" />
+                          Stone (Batu)
+                        </span>
+                        <span className="font-mono text-emerald-400 font-bold">
+                          {brushSettings.pathBlendRatios?.stone ?? 40}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={brushSettings.pathBlendRatios?.stone ?? 40}
+                        onChange={(e) => {
+                          const nextStone = parseInt(e.target.value);
+                          const nextBlend = {
+                            stone: nextStone,
+                            gravel: brushSettings.pathBlendRatios?.gravel ?? 35,
+                            dirt: brushSettings.pathBlendRatios?.dirt ?? 25,
+                          };
+                          onUpdateBrushSettings({ pathStyle: 'custom_blend', pathBlendRatios: nextBlend });
+                          onUpdateTerrainConfig({ pathStyle: 'custom_blend', pathBlendRatios: nextBlend });
+                        }}
+                        className="w-full accent-slate-400 cursor-pointer"
+                        title="Rasio material batu granit/slate"
+                      />
+                    </div>
+
+                    {/* Gravel Slider */}
+                    <div className="p-2 rounded-lg bg-slate-800/60 border border-slate-700/60">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="flex items-center gap-1.5 font-semibold text-slate-200">
+                          <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block shadow-sm" />
+                          Gravel (Kerikil)
+                        </span>
+                        <span className="font-mono text-cyan-400 font-bold">
+                          {brushSettings.pathBlendRatios?.gravel ?? 35}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={brushSettings.pathBlendRatios?.gravel ?? 35}
+                        onChange={(e) => {
+                          const nextGravel = parseInt(e.target.value);
+                          const nextBlend = {
+                            stone: brushSettings.pathBlendRatios?.stone ?? 40,
+                            gravel: nextGravel,
+                            dirt: brushSettings.pathBlendRatios?.dirt ?? 25,
+                          };
+                          onUpdateBrushSettings({ pathStyle: 'custom_blend', pathBlendRatios: nextBlend });
+                          onUpdateTerrainConfig({ pathStyle: 'custom_blend', pathBlendRatios: nextBlend });
+                        }}
+                        className="w-full accent-cyan-400 cursor-pointer"
+                        title="Rasio agregat kerikil sungai"
+                      />
+                    </div>
+
+                    {/* Dirt Slider */}
+                    <div className="p-2 rounded-lg bg-slate-800/60 border border-slate-700/60">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="flex items-center gap-1.5 font-semibold text-slate-200">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-600 inline-block shadow-sm" />
+                          Dirt (Tanah)
+                        </span>
+                        <span className="font-mono text-amber-400 font-bold">
+                          {brushSettings.pathBlendRatios?.dirt ?? 25}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={brushSettings.pathBlendRatios?.dirt ?? 25}
+                        onChange={(e) => {
+                          const nextDirt = parseInt(e.target.value);
+                          const nextBlend = {
+                            stone: brushSettings.pathBlendRatios?.stone ?? 40,
+                            gravel: brushSettings.pathBlendRatios?.gravel ?? 35,
+                            dirt: nextDirt,
+                          };
+                          onUpdateBrushSettings({ pathStyle: 'custom_blend', pathBlendRatios: nextBlend });
+                          onUpdateTerrainConfig({ pathStyle: 'custom_blend', pathBlendRatios: nextBlend });
+                        }}
+                        className="w-full accent-amber-500 cursor-pointer"
+                        title="Rasio tanah loam pedesaan"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Real-time Cross-Section Texture Blend Strip */}
+                  <div className="flex items-center gap-3 pt-1">
+                    <span className="text-[10px] text-slate-400 font-semibold shrink-0">Profil Penampang:</span>
+                    <div
+                      className="h-4 flex-1 rounded-md shadow-inner border border-slate-700/80 flex overflow-hidden"
+                      title="Simulasi penampang melintang jalan dari pinggir ke tengah lalu ke pinggir"
+                    >
+                      <div
+                        style={{
+                          width: '100%',
+                          background: `linear-gradient(to right, #78350f, #94a3b8, #64748b, #94a3b8, #78350f)`,
+                          opacity: 0.9,
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-emerald-400 italic shrink-0">
+                      Pinggir (Tanah) ↔ Tengah (Batu & Kerikil)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-800/40 p-3 rounded-xl border border-slate-700/60">
               <div>
@@ -651,6 +972,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
               <div className="flex items-center gap-1.5 overflow-x-auto">
                 {[
                   { id: 'all', label: 'All Items' },
+                  { id: 'path', label: 'Jalan & Jembatan 🪨' },
                   { id: 'foliage', label: 'Foliage' },
                   { id: 'building', label: 'Buildings' },
                   { id: 'cyber', label: 'Cyberpunk' },

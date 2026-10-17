@@ -56,6 +56,17 @@ function createContactShadowDisc(radius = 2.0): THREE.Mesh {
 }
 
 /**
+ * Pre-computes per-face vertex normals on non-indexed geometry.
+ * Completely eliminates fragment shader dFdx(vViewPosition) breakdown on mobile GPUs
+ * which previously caused tree foliage and low-poly meshes to turn pitch black when zooming in close!
+ */
+export function makeFlatShadedGeo<T extends THREE.BufferGeometry>(geo: T): THREE.BufferGeometry {
+  const nonIndexed = geo.index ? geo.toNonIndexed() : geo.clone();
+  nonIndexed.computeVertexNormals();
+  return nonIndexed;
+}
+
+/**
  * 1. Cyberpunk Skyscraper (Neo Tower - 8 composite parts)
  */
 export function createCyberSkyscraper(): THREE.Group {
@@ -249,12 +260,11 @@ export function createPineTree(): THREE.Group {
   group.add(trunk);
 
   // 2. Bottom Foliage Tier
-  const botGeo = new THREE.ConeGeometry(2.4, 2.6, 7);
+  const botGeo = makeFlatShadedGeo(new THREE.ConeGeometry(2.4, 2.6, 7));
   const foliageMat1 = new THREE.MeshStandardMaterial({
     color: 0x1e5e3a,
     roughness: 0.75,
-    metalness: 0.1,
-    flatShading: true,
+    metalness: 0.05,
   });
   const bot = new THREE.Mesh(botGeo, foliageMat1);
   bot.position.y = 2.4;
@@ -262,12 +272,11 @@ export function createPineTree(): THREE.Group {
   group.add(bot);
 
   // 3. Middle Foliage Tier (slight rotation for stylized asymmetry)
-  const midGeo = new THREE.ConeGeometry(1.8, 2.2, 7);
+  const midGeo = makeFlatShadedGeo(new THREE.ConeGeometry(1.8, 2.2, 7));
   const foliageMat2 = new THREE.MeshStandardMaterial({
     color: 0x2d7a4c,
     roughness: 0.7,
-    metalness: 0.1,
-    flatShading: true,
+    metalness: 0.05,
   });
   const mid = new THREE.Mesh(midGeo, foliageMat2);
   mid.position.y = 3.6;
@@ -276,12 +285,11 @@ export function createPineTree(): THREE.Group {
   group.add(mid);
 
   // 4. Top Crown Spire (lighter apex highlight)
-  const topGeo = new THREE.ConeGeometry(1.2, 1.8, 7);
+  const topGeo = makeFlatShadedGeo(new THREE.ConeGeometry(1.2, 1.8, 7));
   const foliageMat3 = new THREE.MeshStandardMaterial({
     color: 0x48a065,
     roughness: 0.65,
-    metalness: 0.1,
-    flatShading: true,
+    metalness: 0.05,
   });
   const top = new THREE.Mesh(topGeo, foliageMat3);
   top.position.y = 4.7;
@@ -301,7 +309,7 @@ export function createBroadleafTree(): THREE.Group {
   group.name = 'broadleaf_tree';
 
   // 1. Organic Trunk
-  const trunkGeo = new THREE.CylinderGeometry(0.35, 0.6, 2.6, 8);
+  const trunkGeo = makeFlatShadedGeo(new THREE.CylinderGeometry(0.35, 0.6, 2.6, 8));
   const trunkMat = new THREE.MeshStandardMaterial({
     color: 0x6e473b,
     roughness: 0.85,
@@ -312,43 +320,41 @@ export function createBroadleafTree(): THREE.Group {
   trunk.castShadow = true;
   group.add(trunk);
 
-  // Canopy Clusters (Stylized low-poly icos/spheres)
+  // Canopy Clusters (Stylized low-poly icos/spheres with baked face normals)
   const leafMat = new THREE.MeshStandardMaterial({
     color: 0x55a630,
-    roughness: 0.8,
+    roughness: 0.75,
     metalness: 0.05,
-    flatShading: true,
   });
   const leafMatLight = new THREE.MeshStandardMaterial({
     color: 0x80b918,
-    roughness: 0.75,
+    roughness: 0.70,
     metalness: 0.05,
-    flatShading: true,
   });
 
   // 2. Central main cloud
-  const c1Geo = new THREE.DodecahedronGeometry(1.8, 1);
+  const c1Geo = makeFlatShadedGeo(new THREE.DodecahedronGeometry(1.8, 1));
   const c1 = new THREE.Mesh(c1Geo, leafMat);
   c1.position.set(0, 3.6, 0);
   c1.castShadow = true;
   group.add(c1);
 
   // 3. Side cluster left
-  const c2Geo = new THREE.DodecahedronGeometry(1.3, 1);
+  const c2Geo = makeFlatShadedGeo(new THREE.DodecahedronGeometry(1.3, 1));
   const c2 = new THREE.Mesh(c2Geo, leafMatLight);
   c2.position.set(-1.1, 3.2, 0.4);
   c2.castShadow = true;
   group.add(c2);
 
   // 4. Side cluster right
-  const c3Geo = new THREE.DodecahedronGeometry(1.4, 1);
+  const c3Geo = makeFlatShadedGeo(new THREE.DodecahedronGeometry(1.4, 1));
   const c3 = new THREE.Mesh(c3Geo, leafMat);
   c3.position.set(1.0, 3.4, -0.3);
   c3.castShadow = true;
   group.add(c3);
 
   // 5. Crown top tuft
-  const c4Geo = new THREE.DodecahedronGeometry(1.2, 1);
+  const c4Geo = makeFlatShadedGeo(new THREE.DodecahedronGeometry(1.2, 1));
   const c4 = new THREE.Mesh(c4Geo, leafMatLight);
   c4.position.set(0.2, 4.7, 0.1);
   c4.castShadow = true;
@@ -366,12 +372,11 @@ export function createStoneWindmill(): THREE.Group {
   group.name = 'stone_windmill';
 
   // 1. Octagonal stone foundation
-  const baseGeo = new THREE.CylinderGeometry(2.4, 2.8, 1.8, 8);
+  const baseGeo = makeFlatShadedGeo(new THREE.CylinderGeometry(2.4, 2.8, 1.8, 8));
   const stoneMat = new THREE.MeshStandardMaterial({
     color: 0x64748b,
     roughness: 0.9,
     metalness: 0.1,
-    flatShading: true,
   });
   const base = new THREE.Mesh(baseGeo, stoneMat);
   base.position.y = 0.9;
@@ -379,12 +384,11 @@ export function createStoneWindmill(): THREE.Group {
   group.add(base);
 
   // 2. Tapered timber tower
-  const towerGeo = new THREE.CylinderGeometry(1.8, 2.3, 4.5, 8);
+  const towerGeo = makeFlatShadedGeo(new THREE.CylinderGeometry(1.8, 2.3, 4.5, 8));
   const woodMat = new THREE.MeshStandardMaterial({
     color: 0xa16207,
     roughness: 0.7,
     metalness: 0.05,
-    flatShading: true,
   });
   const tower = new THREE.Mesh(towerGeo, woodMat);
   tower.position.y = 1.8 + 2.25;
@@ -392,12 +396,11 @@ export function createStoneWindmill(): THREE.Group {
   group.add(tower);
 
   // 3. Conical shingle roof
-  const roofGeo = new THREE.ConeGeometry(2.2, 2.2, 8);
+  const roofGeo = makeFlatShadedGeo(new THREE.ConeGeometry(2.2, 2.2, 8));
   const roofMat = new THREE.MeshStandardMaterial({
     color: 0x991b1b,
     roughness: 0.6,
     metalness: 0.1,
-    flatShading: true,
   });
   const roof = new THREE.Mesh(roofGeo, roofMat);
   roof.position.y = 6.3 + 1.1;
@@ -464,12 +467,11 @@ export function createIslandLighthouse(): THREE.Group {
   group.name = 'island_lighthouse';
 
   // 1. Rocky footing foundation
-  const rockGeo = new THREE.CylinderGeometry(2.8, 3.2, 1.2, 9);
+  const rockGeo = makeFlatShadedGeo(new THREE.CylinderGeometry(2.8, 3.2, 1.2, 9));
   const rockMat = new THREE.MeshStandardMaterial({
     color: 0x475569,
     roughness: 0.95,
     metalness: 0.1,
-    flatShading: true,
   });
   const rock = new THREE.Mesh(rockGeo, rockMat);
   rock.position.y = 0.6;
@@ -566,12 +568,11 @@ export function createAlpineCottage(): THREE.Group {
   group.add(walls);
 
   // 3. Overhanging pitched roof
-  const roofGeo = new THREE.ConeGeometry(3.2, 1.8, 4);
+  const roofGeo = makeFlatShadedGeo(new THREE.ConeGeometry(3.2, 1.8, 4));
   const roofMat = new THREE.MeshStandardMaterial({
     color: 0x451a03,
     roughness: 0.6,
     metalness: 0.1,
-    flatShading: true,
   });
   const roof = new THREE.Mesh(roofGeo, roofMat);
   roof.rotation.y = Math.PI / 4;
@@ -910,109 +911,6 @@ export function createStreetLamp(): THREE.Group {
 }
 
 /**
- * Standard palette items registry
- */
-export const STANDARD_PALETTE: PaletteItem[] = [
-  {
-    id: 'pine_tree',
-    name: 'Alpine Pine',
-    category: 'foliage',
-    icon: 'Trees',
-    description: 'Stylized 3-tier coniferous evergreen pine tree',
-    defaultScale: [1, 1, 1],
-    badge: 'Foliage',
-  },
-  {
-    id: 'broadleaf_tree',
-    name: 'Canopy Oak',
-    category: 'foliage',
-    icon: 'TreePine',
-    description: 'Volumetric cloud-canopy stylized deciduous tree',
-    defaultScale: [1, 1, 1],
-    badge: 'Foliage',
-  },
-  {
-    id: 'cyber_skyscraper',
-    name: 'Neo Cyber Tower',
-    category: 'cyber',
-    icon: 'Building2',
-    description: 'Mega-corporate skyscraper with glowing neon edge strips and helipad',
-    defaultScale: [1, 1, 1],
-    badge: 'Cyber',
-  },
-  {
-    id: 'cyber_apartment',
-    name: 'Modular Highrise',
-    category: 'cyber',
-    icon: 'Building',
-    description: 'Modular high-density apartments with HVAC roof ducting & neon signage',
-    defaultScale: [1, 1, 1],
-    badge: 'Cyber',
-  },
-  {
-    id: 'stone_windmill',
-    name: 'Stone Windmill',
-    category: 'building',
-    icon: 'Wind',
-    description: 'Octagonal stone masonry base with timber body and 4 lattice sails',
-    defaultScale: [1, 1, 1],
-    badge: 'Medieval',
-  },
-  {
-    id: 'island_lighthouse',
-    name: 'Coastal Lighthouse',
-    category: 'building',
-    icon: 'Flame',
-    description: 'Striped maritime navigation beacon with observation gallery and glass lantern',
-    defaultScale: [1, 1, 1],
-    badge: 'Island',
-  },
-  {
-    id: 'alpine_cottage',
-    name: 'Alpine Chalet',
-    category: 'building',
-    icon: 'Home',
-    description: 'Rustic timber lodge with fieldstone base, dormers and stone chimney',
-    defaultScale: [1, 1, 1],
-    badge: 'Rustic',
-  },
-  {
-    id: 'fantasy_crystal',
-    name: 'Resonant Crystal',
-    category: 'fantasy',
-    icon: 'Gem',
-    description: 'Hovering amethyst monolith surrounded by levitating shard rings',
-    defaultScale: [1, 1, 1],
-    badge: 'Magic',
-  },
-  {
-    id: 'scifi_dome',
-    name: 'Biosphere Dome',
-    category: 'building',
-    icon: 'Compass',
-    description: 'Geodesic habitat dome with interior ecosystem and solar arrays',
-    defaultScale: [1, 1, 1],
-    badge: 'Colony',
-  },
-  {
-    id: 'desert_monolith',
-    name: 'Mesa Ruin Arch',
-    category: 'prop',
-    icon: 'Landmark',
-    description: 'Ancient sandstone megaliths with glowing runic brazier',
-    defaultScale: [1, 1, 1],
-    badge: 'Ancient',
-  },
-  {
-    id: 'wind_turbine',
-    name: 'Clean Wind Turbine',
-    category: 'prop',
-    icon: 'Zap',
-    description: 'High-efficiency 3-blade wind turbine generator',
-    defaultScale: [1, 1, 1],
-    badge: 'Eco',
-  },
-/**
  * 13. Cobblestone Path Segment (Jalan Setapak Batu - 8 composite parts)
  */
 export function createCobblestonePath(): THREE.Group {
@@ -1047,8 +945,9 @@ export function createCobblestonePath(): THREE.Group {
   ];
 
   paverConfigs.forEach((cfg) => {
-    const paverGeo = new THREE.CylinderGeometry(cfg.w * 0.5, cfg.w * 0.55, cfg.h, 7);
-    paverGeo.scale(1, 1, cfg.d / cfg.w);
+    const rawGeo = new THREE.CylinderGeometry(cfg.w * 0.5, cfg.w * 0.55, cfg.h, 7);
+    rawGeo.scale(1, 1, cfg.d / cfg.w);
+    const paverGeo = makeFlatShadedGeo(rawGeo);
     const paver = new THREE.Mesh(paverGeo, cfg.mat);
     paver.position.set(cfg.x, 0.16 + cfg.h * 0.5, cfg.z);
     paver.castShadow = true;
@@ -1134,7 +1033,7 @@ export function createSteppingStones(): THREE.Group {
   ];
 
   stones.forEach((s) => {
-    const geo = new THREE.CylinderGeometry(s.r, s.r * 1.08, s.h, 7);
+    const geo = makeFlatShadedGeo(new THREE.CylinderGeometry(s.r, s.r * 1.08, s.h, 7));
     const mesh = new THREE.Mesh(geo, s.mat);
     mesh.position.set(s.x, s.h * 0.5 + 0.04, s.z);
     mesh.castShadow = true;

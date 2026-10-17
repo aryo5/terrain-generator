@@ -137,17 +137,17 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     scene.background = new THREE.Color(palette.skyColor);
     scene.fog = new THREE.FogExp2(palette.fogColor, 0.0038);
 
-    // 2. Camera setup - wide clipping planes for expansive world vistas
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.5, 2500);
+    // 2. Camera setup - near plane 0.5 prevents close-up geometric clipping when zooming into village details
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.5, 1200);
     camera.position.set(75, 55, 85);
     cameraRef.current = camera;
 
-    // 3. Renderer setup - tuned for lightweight mobile WebGL
+    // 3. Renderer setup - highp precision eliminates normal derivative collapse on mobile
     const renderer = new THREE.WebGLRenderer({
       antialias: false,
       powerPreference: 'high-performance',
       preserveDrawingBuffer: true,
-      precision: isMobileDevice ? 'mediump' : 'highp',
+      precision: 'highp',
     });
     renderer.setSize(width, height);
 
@@ -186,14 +186,14 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     controls.target.set(0, 4, 0);
     controlsRef.current = controls;
 
-    // 5. Studio Environment Map (only on desktop ultra mode)
+    // 5. Ambient Light Baseline (ensures zero pitch-black surfaces in close-up or shaded views)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+    scene.add(ambientLight);
+
     if (!isMobileDevice && !isSoftwareOrHeadless && performanceMode === 'ultra') {
       const pmremGenerator = new THREE.PMREMGenerator(renderer);
       scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
       pmremGenerator.dispose();
-    } else {
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-      scene.add(ambientLight);
     }
 
     // 6. Lighting Rig
@@ -227,6 +227,15 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     );
     terrainGeo.rotateX(-Math.PI / 2);
 
+    // Apply initial heights and vertex colors at mount time so shaders compile with vertexColors
+    const initPosArr = terrainGeo.attributes.position.array as Float32Array;
+    for (let i = 0; i < heights.length; i++) {
+      initPosArr[i * 3 + 1] = heights[i];
+    }
+    terrainGeo.attributes.position.needsUpdate = true;
+    terrainGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+    terrainGeo.computeVertexNormals();
+
     const terrainMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.82,
@@ -240,8 +249,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     exportGroup.add(terrainMesh);
     terrainMeshRef.current = terrainMesh;
 
-    // 9. Water Plane - Vast horizon ocean covering expansive vista
-    const waterSize = Math.max(terrainConfig.size * 3.8, 550);
+    // 9. Water Plane - Proportionately scaled so the land feels expansive rather than lost in void
+    const oceanMult = terrainConfig.oceanScale ?? 1.9;
+    const waterSize = Math.max(terrainConfig.size * oceanMult, 220);
     const waterGeo = new THREE.PlaneGeometry(waterSize, waterSize, 12, 12);
     waterGeo.rotateX(-Math.PI / 2);
     const waterMat = new THREE.MeshStandardMaterial({
@@ -258,27 +268,41 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     scene.add(waterMesh);
     waterMeshRef.current = waterMesh;
 
-    // 9b. Distant horizon silhouettes (soft peaks and atolls framing the expansive world)
+    // 9b. Surrounding archipelago atolls and coastal reefs framing the expansive landscape
     const horizonGroup = new THREE.Group();
     horizonGroup.name = 'HorizonDistantIslands';
-    const horizonGeo = new THREE.ConeGeometry(28, 20, 7);
-    const horizonMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(palette.fogColor).multiplyScalar(0.88),
-      roughness: 0.95,
-      metalness: 0.0,
-      flatShading: false,
+    const sandStop = palette.stops[1] || [0.15, 0.88, 0.78, 0.55];
+    const rockStop = palette.stops[4] || [0.75, 0.45, 0.42, 0.38];
+    const atollMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(sandStop[1], sandStop[2], sandStop[3]),
+      roughness: 0.9,
     });
-    const distRad = terrainConfig.size * 1.5;
-    for (let p = 0; p < 8; p++) {
-      const angle = (p / 8) * Math.PI * 2 + 0.35;
-      const dist = distRad * (1.1 + (p % 3) * 0.18);
+    const reefMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(rockStop[1], rockStop[2], rockStop[3]),
+      roughness: 0.85,
+    });
+
+    const atollCount = 8;
+    const baseRad = terrainConfig.size * 0.62;
+    for (let p = 0; p < atollCount; p++) {
+      const angle = (p / atollCount) * Math.PI * 2 + 0.35;
+      const dist = baseRad * (1.1 + (p % 3) * 0.22);
       const px = Math.cos(angle) * dist;
       const pz = Math.sin(angle) * dist;
-      const peakMesh = new THREE.Mesh(horizonGeo, horizonMat);
-      peakMesh.position.set(px, 3 + (p % 2) * 4, pz);
-      const s = 0.85 + (p % 4) * 0.35;
-      peakMesh.scale.set(s, s * 0.75, s);
-      horizonGroup.add(peakMesh);
+
+      // Stylized sandy atoll ring
+      const atollGeo = new THREE.CylinderGeometry(5.0, 7.0, 1.4, 7);
+      const atollMesh = new THREE.Mesh(atollGeo, atollMat);
+      atollMesh.position.set(px, terrainConfig.waterLevel - 0.2, pz);
+      const s = 0.8 + (p % 4) * 0.35;
+      atollMesh.scale.set(s, s * 0.8, s);
+      horizonGroup.add(atollMesh);
+
+      // Low rock spine on top
+      const reefGeo = new THREE.ConeGeometry(2.0, 3.2, 5);
+      const reefMesh = new THREE.Mesh(reefGeo, reefMat);
+      reefMesh.position.set(px + 1.2, terrainConfig.waterLevel + 0.7, pz - 0.8);
+      horizonGroup.add(reefMesh);
     }
     scene.add(horizonGroup);
 
@@ -427,9 +451,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     const terrain = terrainMeshRef.current;
     if (!terrain) return;
 
-    const geo = terrain.geometry as THREE.BufferGeometry;
+    let geo = terrain.geometry as THREE.BufferGeometry;
     const posAttr = geo.attributes.position;
-    const colAttr = geo.attributes.color;
 
     if (!posAttr || posAttr.count !== heights.length) {
       // Re-create geometry if resolution changed
@@ -442,20 +465,25 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       );
       newGeo.rotateX(-Math.PI / 2);
       terrain.geometry = newGeo;
+      geo = newGeo;
     }
 
-    const currentGeo = terrain.geometry as THREE.BufferGeometry;
-    const pos = currentGeo.attributes.position;
-
-    // Apply heights (Y is vertical in world after rotateX(-PI/2))
+    const pos = geo.attributes.position;
+    const posArr = pos.array as Float32Array;
     for (let i = 0; i < heights.length; i++) {
-      pos.setY(i, heights[i]);
+      posArr[i * 3 + 1] = heights[i];
     }
     pos.needsUpdate = true;
 
-    // Apply vertex colors
-    currentGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    currentGeo.attributes.color.needsUpdate = true;
+    // Apply vertex colors (in-place buffer update for zero GC overhead and instant response)
+    if (!geo.attributes.color || geo.attributes.color.count !== heights.length) {
+      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+      (terrain.material as THREE.MeshStandardMaterial).needsUpdate = true;
+    } else {
+      const colArr = geo.attributes.color.array as Float32Array;
+      colArr.set(colors);
+      geo.attributes.color.needsUpdate = true;
+    }
 
     // Sync material flatShading vs smoothShading
     const mat = terrain.material as THREE.MeshStandardMaterial;
@@ -467,7 +495,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       }
     }
 
-    currentGeo.computeVertexNormals();
+    geo.computeVertexNormals();
   }, [heights, colors, terrainConfig.resolution, terrainConfig.size, terrainConfig.smoothShading]);
 
   // Sync water level, size, and biome visuals
@@ -698,9 +726,10 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         newColors,
         terrainConfig.size,
         terrainConfig.resolution,
-        brushSettings.pathStyle || terrainConfig.pathStyle || 'dirt',
+        brushSettings.pathStyle || terrainConfig.pathStyle || 'blend_natural',
         brushSettings.radius,
-        brushSettings.intensity
+        brushSettings.intensity,
+        brushSettings.pathBlendRatios
       );
 
       // Direct buffer attribute update for instantaneous 60fps response
@@ -709,13 +738,19 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         const geo = terrain.geometry as THREE.BufferGeometry;
         const pos = geo.attributes.position;
         if (pos) {
+          const posArr = pos.array as Float32Array;
           for (let i = 0; i < newHeights.length; i++) {
-            pos.setY(i, newHeights[i]);
+            posArr[i * 3 + 1] = newHeights[i];
           }
           pos.needsUpdate = true;
         }
-        geo.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
-        if (geo.attributes.color) geo.attributes.color.needsUpdate = true;
+        if (geo.attributes.color && geo.attributes.color.count === newColors.length / 3) {
+          (geo.attributes.color.array as Float32Array).set(newColors);
+          geo.attributes.color.needsUpdate = true;
+        } else {
+          geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(newColors), 3));
+          if (geo.attributes.color) geo.attributes.color.needsUpdate = true;
+        }
         geo.computeVertexNormals();
       }
 
@@ -743,8 +778,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         const geo = terrain.geometry as THREE.BufferGeometry;
         const pos = geo.attributes.position;
         if (pos) {
+          const posArr = pos.array as Float32Array;
           for (let i = 0; i < newHeights.length; i++) {
-            pos.setY(i, newHeights[i]);
+            posArr[i * 3 + 1] = newHeights[i];
           }
           pos.needsUpdate = true;
         }

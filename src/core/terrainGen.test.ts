@@ -6,6 +6,8 @@ import {
   generateTerrainData,
   getSampledHeightAt,
   applySculptBrush,
+  applyPathBrush,
+  generateProceduralTrails,
   BIOME_PALETTES
 } from './terrainGen.ts';
 import { TerrainConfig } from '../types/index.ts';
@@ -45,6 +47,8 @@ test('calculateRawHeight respects island falloff mask', () => {
     islandFalloff: true,
     terraceSteps: 0,
     biome: 'archipelago',
+    smoothShading: true,
+    pathStyle: 'dirt',
   };
 
   const centerH = calculateRawHeight(0, 0, noise, configWithFalloff);
@@ -65,6 +69,8 @@ test('generateTerrainData outputs properly sized float arrays and colors', () =>
     islandFalloff: false,
     terraceSteps: 4,
     biome: 'cyberpunk',
+    smoothShading: true,
+    pathStyle: 'cyber',
   };
 
   const data = generateTerrainData(config);
@@ -118,3 +124,46 @@ test('applySculptBrush raises and lowers heights within brush radius', () => {
   const loweredH = getSampledHeightAt(0, 0, heights, size, resolution);
   assert.ok(loweredH < raisedH);
 });
+
+test('applyPathBrush paints multi-material blended textures and smooths path heights', () => {
+  const resolution = 16;
+  const size = 50;
+  const heights = new Float32Array(resolution * resolution).fill(6);
+  const colors = new Float32Array(resolution * resolution * 3).fill(0.2); // base greenish color
+
+  const customBlend = { stone: 60, gravel: 30, dirt: 10 };
+  applyPathBrush(0, 0, heights, colors, size, resolution, 'custom_blend', 8, 1.0, customBlend);
+
+  // Check center vertex color changed toward stone/gravel/dirt blend
+  const centerIdx = (8 * resolution + 8) * 3;
+  const r = colors[centerIdx];
+  const g = colors[centerIdx + 1];
+  const b = colors[centerIdx + 2];
+
+  assert.ok(r > 0.3, `Red component should reflect stone/gravel/dirt palette, got ${r}`);
+  assert.ok(g > 0.3, `Green component should reflect stone/gravel/dirt palette, got ${g}`);
+});
+
+test('generateProceduralTrails generates scenic connected path segments on terrain', () => {
+  const config = {
+    seed: 2026,
+    size: 100,
+    resolution: 24,
+    heightScale: 24,
+    roughness: 1.2,
+    waterLevel: 2,
+    islandFalloff: true,
+    biome: 'archipelago' as const,
+    smoothShading: true,
+    terraceSteps: 0,
+    oceanScale: 1.9,
+    pathStyle: 'blend_natural' as const,
+  };
+
+  const { heights, colors } = generateTerrainData(config);
+  const result = generateProceduralTrails(heights, colors, config);
+
+  assert.ok(result.segments.length > 0, 'Should generate at least one scenic trail segment');
+  assert.ok(Array.isArray(result.propPositions), 'Should return prop positions array');
+});
+
