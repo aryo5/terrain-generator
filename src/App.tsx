@@ -4,6 +4,7 @@ import {
   BiomeType,
   BrushSettings,
   CustomAssetRecord,
+  GraphicsPreset,
   PaletteItem,
   PerformanceMode,
   PlacedObject,
@@ -23,6 +24,7 @@ import { createPRNG } from './core/math';
 import { Viewport3D } from './components/Viewport3D';
 import { TopBar } from './components/TopBar';
 import { ControlDock } from './components/ControlDock';
+import { GraphicsSettingsModal } from './components/GraphicsSettingsModal';
 
 const isMobileInitial = typeof window !== 'undefined' && (
   /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
@@ -32,7 +34,7 @@ const isMobileInitial = typeof window !== 'undefined' && (
 const DEFAULT_TERRAIN_CONFIG: TerrainConfig = {
   seed: 2026,
   size: 110,
-  resolution: isMobileInitial ? 44 : 52, // optimized 44x44 for silky smooth 60fps on mobile
+  resolution: isMobileInitial ? 32 : 44, // optimized 32x32 vertex grid for silky smooth 60fps on mobile
   heightScale: 28,
   roughness: 1.2,
   waterLevel: 2,
@@ -118,10 +120,13 @@ export default function App() {
       const res = terrainConfig.resolution;
       const waterLvl = terrainConfig.waterLevel;
 
-      // Select candidate items per biome with natural distribution
+      // Select candidate items per biome with natural distribution (including lush meadow grass)
       let candidateTypes: { type: string; category: any; name: string }[] = [];
       if (biome === 'archipelago') {
         candidateTypes = [
+          { type: 'meadow_grass', category: 'foliage', name: 'Rumput Padang' },
+          { type: 'meadow_grass', category: 'foliage', name: 'Rumput Padang' },
+          { type: 'flower_patch', category: 'foliage', name: 'Bunga Padang' },
           { type: 'broadleaf_tree', category: 'foliage', name: 'Canopy Oak' },
           { type: 'broadleaf_tree', category: 'foliage', name: 'Canopy Oak' },
           { type: 'pine_tree', category: 'foliage', name: 'Alpine Pine' },
@@ -141,7 +146,8 @@ export default function App() {
         ];
       } else if (biome === 'alpine') {
         candidateTypes = [
-          { type: 'pine_tree', category: 'foliage', name: 'Alpine Pine' },
+          { type: 'meadow_grass', category: 'foliage', name: 'Rumput Padang' },
+          { type: 'meadow_grass', category: 'foliage', name: 'Rumput Padang' },
           { type: 'pine_tree', category: 'foliage', name: 'Alpine Pine' },
           { type: 'pine_tree', category: 'foliage', name: 'Alpine Pine' },
           { type: 'alpine_cottage', category: 'building', name: 'Alpine Chalet' },
@@ -160,11 +166,14 @@ export default function App() {
           { type: 'fantasy_crystal', category: 'fantasy', name: 'Resonant Crystal' },
           { type: 'fantasy_crystal', category: 'fantasy', name: 'Resonant Crystal' },
           { type: 'scifi_dome', category: 'building', name: 'Biosphere Dome' },
-          { type: 'broadleaf_tree', category: 'foliage', name: 'Canopy Oak' },
+          { type: 'meadow_grass', category: 'foliage', name: 'Rumput Padang' },
+          { type: 'flower_patch', category: 'foliage', name: 'Bunga Padang' },
           { type: 'broadleaf_tree', category: 'foliage', name: 'Canopy Oak' },
         ];
       } else {
         candidateTypes = [
+          { type: 'meadow_grass', category: 'foliage', name: 'Rumput Padang' },
+          { type: 'flower_patch', category: 'foliage', name: 'Bunga Padang' },
           { type: 'pine_tree', category: 'foliage', name: 'Alpine Pine' },
           { type: 'broadleaf_tree', category: 'foliage', name: 'Canopy Oak' },
           { type: 'alpine_cottage', category: 'building', name: 'Alpine Chalet' },
@@ -176,7 +185,7 @@ export default function App() {
       const half = size * 0.4;
       let attempts = 0;
 
-      while (objects.length < count && attempts < count * 4) {
+      while (objects.length < count && attempts < count * 5) {
         attempts++;
         const x = (prng() * 2 - 1) * half;
         const z = (prng() * 2 - 1) * half;
@@ -185,16 +194,19 @@ export default function App() {
         // Avoid placement underwater
         if (y < waterLvl + 0.3) continue;
 
+        // Pick item first to determine optimal clearance
+        const item = candidateTypes[Math.floor(prng() * candidateTypes.length)];
+        const isGrass = item.type === 'meadow_grass' || item.type === 'flower_patch';
+        const minClearance = isGrass ? 2.2 : 5.8;
+
         // Check distance to existing placed objects to prevent unnatural overlap
         const tooClose = objects.some((o) => {
           const dx = o.position[0] - x;
           const dz = o.position[2] - z;
-          return Math.sqrt(dx * dx + dz * dz) < 6.5;
+          return Math.sqrt(dx * dx + dz * dz) < minClearance;
         });
         if (tooClose) continue;
 
-        // Pick item
-        const item = candidateTypes[Math.floor(prng() * candidateTypes.length)];
         const rotY = prng() * Math.PI * 2;
         const scaleVariation = 0.85 + prng() * 0.35;
 
@@ -217,6 +229,311 @@ export default function App() {
       });
     },
     [terrainConfig, terrainData, pushHistory]
+  );
+
+  // 1. Scatter specific selected object (Sebar per Objek)
+  const handleScatterSpecificObject = useCallback(
+    (paletteItem: PaletteItem, count = 30, replaceExisting = false) => {
+      const prng = createPRNG(Date.now() + Math.floor(Math.random() * 1000));
+      const size = terrainConfig.size;
+      const res = terrainConfig.resolution;
+      const waterLvl = terrainConfig.waterLevel;
+      const isFoliage = paletteItem.category === 'foliage';
+      const isGrass = paletteItem.id === 'meadow_grass' || paletteItem.id === 'flower_patch';
+      const minDistance = isGrass ? 1.5 : isFoliage ? 2.8 : 6.8;
+
+      const baseList = replaceExisting
+        ? placedObjects.filter((o) => o.type !== paletteItem.id)
+        : [...placedObjects];
+
+      const newObjects: PlacedObject[] = [];
+      const half = size * 0.42;
+      let attempts = 0;
+
+      while (newObjects.length < count && attempts < count * 8) {
+        attempts++;
+        const x = (prng() * 2 - 1) * half;
+        const z = (prng() * 2 - 1) * half;
+        const y = getSampledHeightAt(x, z, terrainData.heights, size, res);
+
+        if (y < waterLvl + 0.25) continue;
+
+        const tooClose = [...baseList, ...newObjects].some((o) => {
+          const dx = o.position[0] - x;
+          const dz = o.position[2] - z;
+          return Math.sqrt(dx * dx + dz * dz) < minDistance;
+        });
+        if (tooClose) continue;
+
+        const rotY = prng() * Math.PI * 2;
+        const scaleVariation = 0.82 + prng() * 0.38;
+        const baseScale = paletteItem.defaultScale || [1, 1, 1];
+
+        newObjects.push({
+          id: `obj_${Date.now()}_${newObjects.length}_${Math.floor(prng() * 1000)}`,
+          name: paletteItem.name,
+          type: paletteItem.id,
+          category: paletteItem.category,
+          position: [x, y, z],
+          rotation: [0, rotY, 0],
+          scale: [
+            baseScale[0] * scaleVariation,
+            baseScale[1] * scaleVariation,
+            baseScale[2] * scaleVariation,
+          ],
+          customModelKey: paletteItem.isCustom ? paletteItem.id : undefined,
+        });
+      }
+
+      const combined = [...baseList, ...newObjects];
+      setPlacedObjects(combined);
+      pushHistory({
+        heights: new Float32Array(terrainData.heights),
+        colors: new Float32Array(terrainData.colors),
+        objects: combined,
+      });
+
+      setToastMessage(
+        `${newObjects.length}x ${paletteItem.name} berhasil disebar di pulau!`
+      );
+      setTimeout(() => setToastMessage(null), 3500);
+    },
+    [terrainConfig, terrainData, placedObjects, pushHistory]
+  );
+
+  // 2. Scatter buildings only (Acak Bangunan)
+  const handleScatterBuildings = useCallback(
+    (count = 12, replaceExisting = false) => {
+      const prng = createPRNG(Date.now() + 101);
+      const size = terrainConfig.size;
+      const res = terrainConfig.resolution;
+      const waterLvl = terrainConfig.waterLevel;
+
+      // Select candidate buildings based on biome or general architectural pool
+      let buildingTypes: { type: string; category: any; name: string }[] = [];
+      if (terrainConfig.biome === 'cyberpunk') {
+        buildingTypes = [
+          { type: 'cyber_skyscraper', category: 'cyber', name: 'Neo Cyber Tower' },
+          { type: 'cyber_apartment', category: 'cyber', name: 'Modular Highrise' },
+          { type: 'cyber_apartment', category: 'cyber', name: 'Modular Highrise' },
+          { type: 'wind_turbine', category: 'prop', name: 'Clean Wind Turbine' },
+        ];
+      } else if (terrainConfig.biome === 'oasis') {
+        buildingTypes = [
+          { type: 'scifi_dome', category: 'building', name: 'Biosphere Dome' },
+          { type: 'alpine_cottage', category: 'building', name: 'Alpine Chalet' },
+          { type: 'stone_windmill', category: 'building', name: 'Stone Windmill' },
+        ];
+      } else {
+        buildingTypes = [
+          { type: 'alpine_cottage', category: 'building', name: 'Alpine Chalet' },
+          { type: 'alpine_cottage', category: 'building', name: 'Alpine Chalet' },
+          { type: 'stone_windmill', category: 'building', name: 'Stone Windmill' },
+          { type: 'island_lighthouse', category: 'building', name: 'Coastal Lighthouse' },
+        ];
+      }
+
+      const baseList = replaceExisting
+        ? placedObjects.filter((o) => o.category !== 'building' && o.category !== 'cyber')
+        : [...placedObjects];
+
+      const newObjects: PlacedObject[] = [];
+      const half = size * 0.38;
+      let attempts = 0;
+
+      while (newObjects.length < count && attempts < count * 10) {
+        attempts++;
+        const x = (prng() * 2 - 1) * half;
+        const z = (prng() * 2 - 1) * half;
+        const y = getSampledHeightAt(x, z, terrainData.heights, size, res);
+
+        // Avoid water
+        if (y < waterLvl + 0.4) continue;
+
+        // Buildings need good distance so they don't overlap awkwardly
+        const tooClose = [...baseList, ...newObjects].some((o) => {
+          const dx = o.position[0] - x;
+          const dz = o.position[2] - z;
+          const distReq = o.category === 'building' || o.category === 'cyber' ? 7.5 : 4.0;
+          return Math.sqrt(dx * dx + dz * dz) < distReq;
+        });
+        if (tooClose) continue;
+
+        const candidate = buildingTypes[Math.floor(prng() * buildingTypes.length)];
+        const rotY = (Math.floor(prng() * 8) * Math.PI) / 4; // natural 45° snapped angles for buildings
+        const scaleVariation = 0.9 + prng() * 0.25;
+
+        newObjects.push({
+          id: `bld_${Date.now()}_${newObjects.length}`,
+          name: candidate.name,
+          type: candidate.type,
+          category: candidate.category,
+          position: [x, y, z],
+          rotation: [0, rotY, 0],
+          scale: [scaleVariation, scaleVariation, scaleVariation],
+        });
+      }
+
+      const combined = [...baseList, ...newObjects];
+      setPlacedObjects(combined);
+      pushHistory({
+        heights: new Float32Array(terrainData.heights),
+        colors: new Float32Array(terrainData.colors),
+        objects: combined,
+      });
+
+      setToastMessage(
+        `${newObjects.length} bangunan pemukiman berhasil diacak dan ditempatkan!`
+      );
+      setTimeout(() => setToastMessage(null), 3500);
+    },
+    [terrainConfig, terrainData, placedObjects, pushHistory]
+  );
+
+  // 3. Scatter vegetation only (Acak Tumbuhan & Rumput)
+  const handleScatterVegetation = useCallback(
+    (count = 35, replaceExisting = false) => {
+      const prng = createPRNG(Date.now() + 202);
+      const size = terrainConfig.size;
+      const res = terrainConfig.resolution;
+      const waterLvl = terrainConfig.waterLevel;
+
+      const vegCandidates: { type: string; category: any; name: string; weight: number }[] = [
+        { type: 'meadow_grass', category: 'foliage', name: 'Rumput Padang', weight: 4 },
+        { type: 'flower_patch', category: 'foliage', name: 'Bunga Padang', weight: 2 },
+        { type: 'broadleaf_tree', category: 'foliage', name: 'Canopy Oak', weight: 2 },
+        { type: 'pine_tree', category: 'foliage', name: 'Alpine Pine', weight: 2 },
+      ];
+
+      // Flatten weighted pool
+      const pool: { type: string; category: any; name: string }[] = [];
+      vegCandidates.forEach((c) => {
+        for (let i = 0; i < c.weight; i++) {
+          pool.push({ type: c.type, category: c.category, name: c.name });
+        }
+      });
+
+      const baseList = replaceExisting
+        ? placedObjects.filter((o) => o.category !== 'foliage')
+        : [...placedObjects];
+
+      const newObjects: PlacedObject[] = [];
+      const half = size * 0.44;
+      let attempts = 0;
+
+      while (newObjects.length < count && attempts < count * 8) {
+        attempts++;
+        const x = (prng() * 2 - 1) * half;
+        const z = (prng() * 2 - 1) * half;
+        const y = getSampledHeightAt(x, z, terrainData.heights, size, res);
+
+        if (y < waterLvl + 0.2) continue;
+
+        const candidate = pool[Math.floor(prng() * pool.length)];
+        const isGrass = candidate.type === 'meadow_grass' || candidate.type === 'flower_patch';
+        const minDist = isGrass ? 1.6 : 3.5;
+
+        const tooClose = [...baseList, ...newObjects].some((o) => {
+          const dx = o.position[0] - x;
+          const dz = o.position[2] - z;
+          return Math.sqrt(dx * dx + dz * dz) < minDist;
+        });
+        if (tooClose) continue;
+
+        const rotY = prng() * Math.PI * 2;
+        const scaleVariation = 0.8 + prng() * 0.4;
+
+        newObjects.push({
+          id: `veg_${Date.now()}_${newObjects.length}`,
+          name: candidate.name,
+          type: candidate.type,
+          category: candidate.category,
+          position: [x, y, z],
+          rotation: [0, rotY, 0],
+          scale: [scaleVariation, scaleVariation, scaleVariation],
+        });
+      }
+
+      const combined = [...baseList, ...newObjects];
+      setPlacedObjects(combined);
+      pushHistory({
+        heights: new Float32Array(terrainData.heights),
+        colors: new Float32Array(terrainData.colors),
+        objects: combined,
+      });
+
+      setToastMessage(
+        `${newObjects.length} tumbuhan & rumput padang berhasil diacak di daratan!`
+      );
+      setTimeout(() => setToastMessage(null), 3500);
+    },
+    [terrainConfig, terrainData, placedObjects, pushHistory]
+  );
+
+  // 4. Quick Meadow Grass Fill (Hamparan Rumput Padang)
+  const handleScatterMeadowGrass = useCallback(
+    (count = 50, replaceExisting = false) => {
+      const prng = createPRNG(Date.now() + 303);
+      const size = terrainConfig.size;
+      const res = terrainConfig.resolution;
+      const waterLvl = terrainConfig.waterLevel;
+
+      const baseList = replaceExisting
+        ? placedObjects.filter((o) => o.type !== 'meadow_grass' && o.type !== 'flower_patch')
+        : [...placedObjects];
+
+      const newObjects: PlacedObject[] = [];
+      const half = size * 0.44;
+      let attempts = 0;
+
+      while (newObjects.length < count && attempts < count * 8) {
+        attempts++;
+        const x = (prng() * 2 - 1) * half;
+        const z = (prng() * 2 - 1) * half;
+        const y = getSampledHeightAt(x, z, terrainData.heights, size, res);
+
+        // Only on elevations above water level
+        if (y < waterLvl + 0.25) continue;
+
+        const tooClose = [...baseList, ...newObjects].some((o) => {
+          const dx = o.position[0] - x;
+          const dz = o.position[2] - z;
+          return Math.sqrt(dx * dx + dz * dz) < 1.4;
+        });
+        if (tooClose) continue;
+
+        // 80% rumput padang, 20% bunga padang
+        const isFlower = prng() < 0.22;
+        const itemType = isFlower ? 'flower_patch' : 'meadow_grass';
+        const itemName = isFlower ? 'Bunga Padang' : 'Rumput Padang';
+        const rotY = prng() * Math.PI * 2;
+        const scaleVar = 0.8 + prng() * 0.45;
+
+        newObjects.push({
+          id: `grass_${Date.now()}_${newObjects.length}`,
+          name: itemName,
+          type: itemType,
+          category: 'foliage',
+          position: [x, y, z],
+          rotation: [0, rotY, 0],
+          scale: [scaleVar, scaleVar, scaleVar],
+        });
+      }
+
+      const combined = [...baseList, ...newObjects];
+      setPlacedObjects(combined);
+      pushHistory({
+        heights: new Float32Array(terrainData.heights),
+        colors: new Float32Array(terrainData.colors),
+        objects: combined,
+      });
+
+      setToastMessage(
+        `Hamparan padang rumput hijau (${newObjects.length} rumpun) berhasil disebar!`
+      );
+      setTimeout(() => setToastMessage(null), 3500);
+    },
+    [terrainConfig, terrainData, placedObjects, pushHistory]
   );
 
   // Initialize initial settlement on load
@@ -558,7 +875,7 @@ export default function App() {
 
   const handleUpdatePerformanceMode = (mode: PerformanceMode) => {
     setPerformanceMode(mode);
-    const newRes = mode === 'mobile' ? 44 : mode === 'balanced' ? 52 : 64;
+    const newRes = mode === 'mobile' ? 32 : mode === 'balanced' ? 44 : 56;
     handleUpdateTerrainConfig({ resolution: newRes });
   };
 
@@ -630,6 +947,10 @@ export default function App() {
         onAutoPopulateBiome={(count) =>
           populateBiome(terrainConfig.biome, count, terrainData.heights, terrainConfig.seed)
         }
+        onScatterSpecificObject={handleScatterSpecificObject}
+        onScatterBuildings={handleScatterBuildings}
+        onScatterVegetation={handleScatterVegetation}
+        onScatterMeadowGrass={handleScatterMeadowGrass}
         onBuildTrail={handleBuildProceduralTrail}
         onClearAllObjects={() => {
           setPlacedObjects([]);

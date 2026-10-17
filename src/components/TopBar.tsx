@@ -11,8 +11,9 @@ import {
   Redo2,
   Eye,
   Camera,
+  Sliders,
 } from 'lucide-react';
-import { BiomeType, PerformanceMode, TimeOfDay } from '../types';
+import { BiomeType, GraphicsPreset, PerformanceMode, TimeOfDay } from '../types';
 
 interface TopBarProps {
   seed: number;
@@ -28,8 +29,11 @@ interface TopBarProps {
   isDockCollapsed: boolean;
   onToggleDock: () => void;
   fps: number;
-  performanceMode: PerformanceMode;
-  onCyclePerformanceMode: () => void;
+  graphicsPreset: GraphicsPreset;
+  onOpenGraphicsSettings: () => void;
+  onCycleGraphicsPreset?: () => void;
+  performanceMode?: PerformanceMode;
+  onCyclePerformanceMode?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -46,22 +50,27 @@ export const TopBar: React.FC<TopBarProps> = ({
   isDockCollapsed,
   onToggleDock,
   fps,
+  graphicsPreset,
+  onOpenGraphicsSettings,
+  onCycleGraphicsPreset,
   performanceMode,
   onCyclePerformanceMode,
 }) => {
+  const effectivePreset = graphicsPreset || (performanceMode === 'ultra' ? 'HIGH' : performanceMode === 'mobile' ? 'LOW' : 'MEDIUM');
+
   const perfBadgeColor =
-    performanceMode === 'mobile'
-      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-      : performanceMode === 'balanced'
-      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-      : 'bg-purple-500/20 text-purple-300 border-purple-500/40';
+    effectivePreset === 'LOW'
+      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:border-emerald-400'
+      : effectivePreset === 'MEDIUM'
+      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:border-amber-400'
+      : 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:border-purple-400';
 
   const perfLabel =
-    performanceMode === 'mobile'
-      ? 'Mobile ⚡'
-      : performanceMode === 'balanced'
-      ? 'Balanced ⚖️'
-      : 'Ultra ✨';
+    effectivePreset === 'LOW'
+      ? 'LOW ⚡'
+      : effectivePreset === 'MEDIUM'
+      ? 'MEDIUM ⚖️'
+      : 'HIGH ✨';
 
   return (
     <header className="absolute top-2 sm:top-3 left-2 sm:left-3 right-2 sm:right-3 flex items-center justify-between pointer-events-none z-20 gap-2">
@@ -87,17 +96,17 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
       </div>
 
-      {/* Mobile Performance Toggle Button */}
+      {/* Graphics Settings Trigger Button */}
       <div className="flex items-center gap-1.5 pointer-events-auto">
         <button
           type="button"
-          onClick={onCyclePerformanceMode}
-          className={`flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl border transition-colors shadow-lg ${perfBadgeColor} bg-slate-900/90 hover:bg-slate-800`}
-          title={`Performance mode: ${performanceMode}. Click to switch between Mobile (Ultra-fast), Balanced, and Ultra`}
+          onClick={onOpenGraphicsSettings}
+          className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-xl border transition-all shadow-lg ${perfBadgeColor} bg-slate-900/95 hover:bg-slate-800`}
+          title={`Pengatur Grafis: ${effectivePreset}. Klik untuk membuka menu pengaturan grafis (LOW, MEDIUM, HIGH)`}
         >
-          <Zap className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="hidden xs:inline">{perfLabel}</span>
-          <span className="xs:hidden">{performanceMode.toUpperCase().slice(0, 3)}</span>
+          <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="hidden xs:inline">Grafis:</span>
+          <span>{perfLabel}</span>
         </button>
       </div>
 

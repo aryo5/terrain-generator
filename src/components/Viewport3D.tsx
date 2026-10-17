@@ -13,7 +13,76 @@ import {
 import { BIOME_PALETTES, applySculptBrush, applyPathBrush, getSampledHeightAt } from '../core/terrainGen';
 import { instantiateModel } from '../core/modelFactory';
 import { getCustomModelClone } from '../core/assetIO';
-import { PerformanceMode } from '../types';
+import { GraphicsPreset, PerformanceMode } from '../types';
+
+export function normalizePreset(graphicsPreset?: GraphicsPreset, performanceMode?: PerformanceMode): GraphicsPreset {
+  if (graphicsPreset === 'LOW' || performanceMode === 'LOW' || performanceMode === 'mobile') return 'LOW';
+  if (graphicsPreset === 'HIGH' || performanceMode === 'HIGH' || performanceMode === 'ultra') return 'HIGH';
+  return 'MEDIUM';
+}
+
+export function getAtmosphereSettings(biome: BiomeType, timeOfDay: TimeOfDay) {
+  const palette = BIOME_PALETTES[biome] || BIOME_PALETTES.archipelago;
+
+  switch (timeOfDay) {
+    case 'golden':
+      return {
+        skyColor: '#f59e0b',
+        fogColor: '#fed7aa',
+        fogDensity: 0.0034,
+        sunColor: 0xffaa44,
+        sunIntensity: 1.55,
+        sunPos: [58, 38, 48] as [number, number, number],
+        ambientColor: 0xffedd5,
+        ambientIntensity: 0.78,
+      };
+    case 'sunset':
+      return {
+        skyColor: '#e11d48',
+        fogColor: '#fecdd3',
+        fogDensity: 0.0036,
+        sunColor: 0xf43f5e,
+        sunIntensity: 1.45,
+        sunPos: [65, 26, 30] as [number, number, number],
+        ambientColor: 0xfce7f3,
+        ambientIntensity: 0.72,
+      };
+    case 'cyberpunk':
+      return {
+        skyColor: '#090d16',
+        fogColor: '#0f172a',
+        fogDensity: 0.0040,
+        sunColor: 0x06b6d4,
+        sunIntensity: 1.35,
+        sunPos: [-42, 55, -32] as [number, number, number],
+        ambientColor: 0x1e293b,
+        ambientIntensity: 0.65,
+      };
+    case 'night':
+      return {
+        skyColor: '#030712',
+        fogColor: '#0b1329',
+        fogDensity: 0.0038,
+        sunColor: 0x93c5fd,
+        sunIntensity: 0.65,
+        sunPos: [-35, 62, 35] as [number, number, number],
+        ambientColor: 0x0f172a,
+        ambientIntensity: 0.5,
+      };
+    case 'day':
+    default:
+      return {
+        skyColor: palette.skyColor,
+        fogColor: palette.fogColor,
+        fogDensity: 0.0033,
+        sunColor: 0xfff3dc, // Warm golden sunlight for dimensional chiaroscuro
+        sunIntensity: 1.4,
+        sunPos: [56, 68, 46] as [number, number, number], // Angled rake light emphasizing low-poly facets
+        ambientColor: 0xfff9ee, // Warm ambient fill
+        ambientIntensity: 0.82,
+      };
+  }
+}
 
 interface Viewport3DProps {
   terrainConfig: TerrainConfig;
@@ -29,7 +98,8 @@ interface Viewport3DProps {
   activePaletteItem: PaletteItem | null;
   brushSettings: BrushSettings;
   timeOfDay: TimeOfDay;
-  performanceMode: PerformanceMode;
+  performanceMode?: PerformanceMode;
+  graphicsPreset?: GraphicsPreset;
   onFpsUpdate?: (fps: number) => void;
   onSceneReady?: (scene: THREE.Scene, exportGroup: THREE.Group) => void;
 }
@@ -38,6 +108,12 @@ interface Viewport3DProps {
 const _vec3 = new THREE.Vector3();
 const _mouse = new THREE.Vector2();
 const _raycaster = new THREE.Raycaster();
+const _dummyObj = new THREE.Object3D();
+const _combinedMat = new THREE.Matrix4();
+const _selectionDummy = new THREE.Mesh(
+  new THREE.BoxGeometry(2, 2, 2),
+  new THREE.MeshBasicMaterial({ visible: false })
+);
 
 export const Viewport3D: React.FC<Viewport3DProps> = ({
   terrainConfig,
@@ -54,6 +130,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   brushSettings,
   timeOfDay,
   performanceMode,
+  graphicsPreset = 'MEDIUM',
   onFpsUpdate,
   onSceneReady,
 }) => {
@@ -75,6 +152,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     brushSettings,
     timeOfDay,
     performanceMode,
+    graphicsPreset,
   });
   propsRef.current = {
     terrainConfig,
@@ -91,6 +169,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     brushSettings,
     timeOfDay,
     performanceMode,
+    graphicsPreset,
   };
 
   // Scene object refs
@@ -106,7 +185,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const ghostPreviewRef = useRef<THREE.Group | null>(null);
   const selectionBoxRef = useRef<THREE.BoxHelper | null>(null);
   const keyLightRef = useRef<THREE.DirectionalLight | null>(null);
-  const hemiLightRef = useRef<THREE.HemisphereLight | null>(null);
+  const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
   const animatedRotorsRef = useRef<{ obj: THREE.Object3D; speed: number }[]>([]);
 
   // Interaction tracking
@@ -114,6 +193,13 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const didDragRef = useRef(false);
   const mouseDownPosRef = useRef({ x: 0, y: 0 });
   const lastRaycastTimeRef = useRef(0);
+
+  // Redundant terrain geometry re-render guard (Rule 3)
+  const lastAppliedHeightsRef = useRef<Float32Array | null>(null);
+  const lastAppliedColorsRef = useRef<Float32Array | null>(null);
+  const lastResRef = useRef<number>(-1);
+  const lastSizeRef = useRef<number>(-1);
+  const lastSmoothRef = useRef<boolean | undefined>(undefined);
 
   // Initialize Three.js scene once
   useEffect(() => {
@@ -129,25 +215,38 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
       (typeof window !== 'undefined' && window.innerWidth < 768);
 
-    // 1. Scene setup
+    // 1. Scene & Atmosphere setup with preset-aware soft horizon fog
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    const palette = BIOME_PALETTES[terrainConfig.biome] || BIOME_PALETTES.archipelago;
-    scene.background = new THREE.Color(palette.skyColor);
-    scene.fog = new THREE.FogExp2(palette.fogColor, 0.0038);
+    const initialPreset = normalizePreset(graphicsPreset, performanceMode);
+    const atm = getAtmosphereSettings(terrainConfig.biome, timeOfDay);
+
+    scene.background = new THREE.Color(atm.skyColor);
+    if (initialPreset === 'LOW') {
+      scene.fog = null;
+    } else {
+      scene.fog = new THREE.FogExp2(atm.fogColor, initialPreset === 'HIGH' ? atm.fogDensity * 1.05 : atm.fogDensity);
+    }
 
     // 2. Camera setup - near plane 0.5 prevents close-up geometric clipping when zooming into village details
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.5, 1200);
     camera.position.set(75, 55, 85);
     cameraRef.current = camera;
 
-    // 3. Renderer setup - highp precision eliminates normal derivative collapse on mobile
+    // 3. Renderer setup:
+    // - precision: 'mediump' to minimize mobile ALU register pressure and boost fragment throughput
+    // - powerPreference: 'high-performance' to ensure maximum GPU clock profile
+    // - antialias: enabled on HIGH for desktop/powerful devices
+    const isHeadlessOrBot =
+      Boolean(navigator.webdriver) ||
+      /HeadlessChrome|Headless/i.test(navigator.userAgent);
+
     const renderer = new THREE.WebGLRenderer({
-      antialias: false,
+      antialias: initialPreset === 'HIGH' && !isHeadlessOrBot,
       powerPreference: 'high-performance',
       preserveDrawingBuffer: true,
-      precision: 'highp',
+      precision: 'mediump',
     });
     renderer.setSize(width, height);
 
@@ -156,21 +255,22 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
     const unmaskedRenderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : '';
     const isSoftwareOrHeadless =
-      Boolean(navigator.webdriver) ||
-      /HeadlessChrome|Headless/i.test(navigator.userAgent) ||
+      isHeadlessOrBot ||
       /llvmpipe|swiftshader|mesa|software|cpu/i.test(unmaskedRenderer);
 
-    // Mobile pixel ratio clamp: 1.15 max ensures razor-sharp look without 3x/4x mobile GPU burn
-    const maxPixelRatio = isMobileDevice || performanceMode === 'mobile' ? 1.15 : (performanceMode === 'balanced' ? 1.5 : 2.0);
-    renderer.setPixelRatio(isSoftwareOrHeadless ? 1 : Math.min(window.devicePixelRatio || 1, maxPixelRatio));
+    // Preset resolution scaling: LOW = 1.0, MEDIUM = 1.25, HIGH = 1.5 max
+    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const targetRatio = initialPreset === 'LOW' ? 1.0 : initialPreset === 'MEDIUM' ? 1.25 : 1.5;
+    const effectivePixelRatio = isSoftwareOrHeadless ? 1 : Math.min(dpr, targetRatio);
+    renderer.setPixelRatio(effectivePixelRatio);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
 
-    // Mobile disables shadow map for buttery smooth 60fps (contact shadow discs provide crisp grounding)
-    renderer.shadowMap.enabled = !isMobileDevice && !isSoftwareOrHeadless && performanceMode === 'ultra';
+    // Shadow optimization per preset: LOW = off, MEDIUM = 512, HIGH = 1024
+    renderer.shadowMap.enabled = initialPreset !== 'LOW';
     if (renderer.shadowMap.enabled) {
-      renderer.shadowMap.type = THREE.BasicShadowMap;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     }
     rendererRef.current = renderer;
 
@@ -186,39 +286,39 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     controls.target.set(0, 4, 0);
     controlsRef.current = controls;
 
-    // 5. Ambient Light Baseline (ensures zero pitch-black surfaces in close-up or shaded views)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+    // 5. Lighting: Warm dimensional DirectionalLight + AmbientLight fill
+    const ambientLight = new THREE.AmbientLight(atm.ambientColor, atm.ambientIntensity);
     scene.add(ambientLight);
+    ambientLightRef.current = ambientLight;
 
-    if (!isMobileDevice && !isSoftwareOrHeadless && performanceMode === 'ultra') {
-      const pmremGenerator = new THREE.PMREMGenerator(renderer);
-      scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
-      pmremGenerator.dispose();
-    }
-
-    // 6. Lighting Rig
-    const hemiLight = new THREE.HemisphereLight(0xfff8e7, 0x1e293b, 0.95);
-    scene.add(hemiLight);
-    hemiLightRef.current = hemiLight;
-
-    const keyLight = new THREE.DirectionalLight(0xfff5ea, 1.8);
-    keyLight.position.set(70, 95, 60);
+    const keyLight = new THREE.DirectionalLight(atm.sunColor, atm.sunIntensity);
+    keyLight.position.set(...atm.sunPos);
     keyLight.castShadow = renderer.shadowMap.enabled;
-    if (keyLight.castShadow) {
-      keyLight.shadow.mapSize.width = 512;
-      keyLight.shadow.mapSize.height = 512;
-      keyLight.shadow.bias = -0.0005;
+    if (keyLight.shadow) {
+      const shadowRes = initialPreset === 'HIGH' ? 1024 : 512;
+      keyLight.shadow.mapSize.width = shadowRes;
+      keyLight.shadow.mapSize.height = shadowRes;
+      keyLight.shadow.camera.near = 0.5;
+      keyLight.shadow.camera.far = 240;
+      keyLight.shadow.bias = initialPreset === 'HIGH' ? -0.0003 : -0.0004;
+      const d = 80;
+      keyLight.shadow.camera.left = -d;
+      keyLight.shadow.camera.right = d;
+      keyLight.shadow.camera.top = d;
+      keyLight.shadow.camera.bottom = -d;
     }
     scene.add(keyLight);
     keyLightRef.current = keyLight;
 
-    // 7. Combined Export Group (Terrain + Placed Objects)
+    // 6. Combined Export Group (Terrain + Placed Objects) - Freeze static matrix
     const exportGroup = new THREE.Group();
     exportGroup.name = 'TerraForge_ExportGroup';
+    exportGroup.matrixAutoUpdate = false;
+    exportGroup.updateMatrix();
     scene.add(exportGroup);
     exportGroupRef.current = exportGroup;
 
-    // 8. Terrain Mesh - Smooth shading by default eliminates visible triangle facets
+    // 7. Terrain Mesh - Ganti ke MeshLambertMaterial & freeze matrixAutoUpdate (Rule 1 & 3)
     const terrainGeo = new THREE.PlaneGeometry(
       terrainConfig.size,
       terrainConfig.size,
@@ -236,50 +336,56 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     terrainGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
     terrainGeo.computeVertexNormals();
 
-    const terrainMat = new THREE.MeshStandardMaterial({
+    const terrainMat = new THREE.MeshLambertMaterial({
       vertexColors: true,
-      roughness: 0.82,
-      metalness: 0.08,
       flatShading: !terrainConfig.smoothShading,
     });
     const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
     terrainMesh.name = 'TerrainMesh';
-    terrainMesh.receiveShadow = renderer.shadowMap.enabled;
-    terrainMesh.castShadow = renderer.shadowMap.enabled;
+    terrainMesh.receiveShadow = initialPreset !== 'LOW'; // Shadows active on MEDIUM & HIGH
+    terrainMesh.castShadow = false;
+    terrainMesh.frustumCulled = true;
+    terrainMesh.matrixAutoUpdate = false;
+    terrainMesh.updateMatrix();
     exportGroup.add(terrainMesh);
     terrainMeshRef.current = terrainMesh;
 
-    // 9. Water Plane - Proportionately scaled so the land feels expansive rather than lost in void
+    // 8. Water Plane - MeshPhongMaterial Low-Poly (24x24 segments for faceted wave vertices)
     const oceanMult = terrainConfig.oceanScale ?? 1.9;
     const waterSize = Math.max(terrainConfig.size * oceanMult, 220);
-    const waterGeo = new THREE.PlaneGeometry(waterSize, waterSize, 12, 12);
+    const waterSegments = 24;
+    const waterGeo = new THREE.PlaneGeometry(waterSize, waterSize, waterSegments, waterSegments);
     waterGeo.rotateX(-Math.PI / 2);
-    const waterMat = new THREE.MeshStandardMaterial({
+    const waterMat = new THREE.MeshPhongMaterial({
       color: new THREE.Color(palette.waterColor),
       transparent: true,
-      opacity: 0.76,
-      roughness: 0.14,
-      metalness: 0.12,
+      opacity: 0.82,
+      flatShading: true,
+      shininess: 45,
+      specular: new THREE.Color(0x99ddff),
       depthWrite: false,
     });
     const waterMesh = new THREE.Mesh(waterGeo, waterMat);
     waterMesh.position.y = terrainConfig.waterLevel;
     waterMesh.name = 'WaterPlane';
+    waterMesh.receiveShadow = false;
+    waterMesh.castShadow = false;
+    waterMesh.frustumCulled = true;
+    waterMesh.matrixAutoUpdate = false;
+    waterMesh.updateMatrix();
     scene.add(waterMesh);
     waterMeshRef.current = waterMesh;
 
-    // 9b. Surrounding archipelago atolls and coastal reefs framing the expansive landscape
+    // 8b. Surrounding archipelago atolls - MeshLambertMaterial (Rule 3)
     const horizonGroup = new THREE.Group();
     horizonGroup.name = 'HorizonDistantIslands';
     const sandStop = palette.stops[1] || [0.15, 0.88, 0.78, 0.55];
     const rockStop = palette.stops[4] || [0.75, 0.45, 0.42, 0.38];
-    const atollMat = new THREE.MeshStandardMaterial({
+    const atollMat = new THREE.MeshLambertMaterial({
       color: new THREE.Color(sandStop[1], sandStop[2], sandStop[3]),
-      roughness: 0.9,
     });
-    const reefMat = new THREE.MeshStandardMaterial({
+    const reefMat = new THREE.MeshLambertMaterial({
       color: new THREE.Color(rockStop[1], rockStop[2], rockStop[3]),
-      roughness: 0.85,
     });
 
     const atollCount = 8;
@@ -296,21 +402,29 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       atollMesh.position.set(px, terrainConfig.waterLevel - 0.2, pz);
       const s = 0.8 + (p % 4) * 0.35;
       atollMesh.scale.set(s, s * 0.8, s);
+      atollMesh.frustumCulled = true;
+      atollMesh.matrixAutoUpdate = false;
+      atollMesh.updateMatrix();
       horizonGroup.add(atollMesh);
 
       // Low rock spine on top
       const reefGeo = new THREE.ConeGeometry(2.0, 3.2, 5);
       const reefMesh = new THREE.Mesh(reefGeo, reefMat);
       reefMesh.position.set(px + 1.2, terrainConfig.waterLevel + 0.7, pz - 0.8);
+      reefMesh.frustumCulled = true;
+      reefMesh.matrixAutoUpdate = false;
+      reefMesh.updateMatrix();
       horizonGroup.add(reefMesh);
     }
+    horizonGroup.matrixAutoUpdate = false;
+    horizonGroup.updateMatrix();
     scene.add(horizonGroup);
 
-    // 10. Objects Group
+    // 10. Objects Group - Freeze static matrix
     const objectsGroup = new THREE.Group();
     objectsGroup.name = 'PlacedObjectsGroup';
-    exportGroup.add(objectsGroup);
-    objectsGroupRef.current = objectsGroup;
+    objectsGroup.matrixAutoUpdate = false;
+    objectsGroup.updateMatrix();
     exportGroup.add(objectsGroup);
     objectsGroupRef.current = objectsGroup;
 
@@ -385,9 +499,34 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
 
       controls.update();
 
-      // Zero-CPU water wave bobbing (pure position transform, 0 buffer uploads!)
+      // Water wave dynamics per graphics preset:
+      // LOW: Static water plane (0 buffer uploads, 0 matrix updates)
+      // MEDIUM: Smooth zero-CPU bobbing (position transform only)
+      // HIGH: Dynamic low-poly sinusoidal vertex displacement + normal recalculation
+      const currentPreset = normalizePreset(propsRef.current.graphicsPreset, propsRef.current.performanceMode);
       if (waterMeshRef.current) {
-        waterMeshRef.current.position.y = propsRef.current.terrainConfig.waterLevel + Math.sin(elapsed * 1.2) * 0.08;
+        if (currentPreset === 'HIGH') {
+          const geo = waterMeshRef.current.geometry as THREE.BufferGeometry;
+          const pos = geo.attributes.position.array as Float32Array;
+          const count = geo.attributes.position.count;
+          for (let i = 0; i < count; i++) {
+            const px = pos[i * 3];
+            const pz = pos[i * 3 + 2];
+            pos[i * 3 + 1] =
+              Math.sin(px * 0.07 + elapsed * 1.5) * 0.32 +
+              Math.cos(pz * 0.05 + elapsed * 1.2) * 0.24 +
+              Math.sin((px + pz) * 0.04 + elapsed * 0.9) * 0.14;
+          }
+          geo.attributes.position.needsUpdate = true;
+          geo.computeVertexNormals();
+          waterMeshRef.current.position.y = propsRef.current.terrainConfig.waterLevel;
+          waterMeshRef.current.updateMatrix();
+        } else if (currentPreset === 'MEDIUM') {
+          waterMeshRef.current.position.y = propsRef.current.terrainConfig.waterLevel + Math.sin(elapsed * 1.0) * 0.08;
+          waterMeshRef.current.updateMatrix();
+        } else {
+          waterMeshRef.current.position.y = propsRef.current.terrainConfig.waterLevel;
+        }
       }
 
       // Rotate windmill blades and turbines via direct array (0 tree traversal!)
@@ -409,6 +548,11 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      const isMobile =
+        /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        window.innerWidth < 768;
+      const maxRatio = isMobile || propsRef.current.performanceMode === 'mobile' ? 1.0 : 1.25;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxRatio));
     };
 
     window.addEventListener('resize', handleResize);
@@ -446,10 +590,27 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     };
   }, []); // Run once on mount
 
-  // Sync terrain geometry positions and colors when heights/colors change
+  // Sync terrain geometry positions and colors when heights/colors change (Rule 3)
   useEffect(() => {
     const terrain = terrainMeshRef.current;
     if (!terrain) return;
+
+    // Redundant execution guard: prevent any re-render or buffer upload of island geometry unless genuinely changed
+    const isSameHeights = lastAppliedHeightsRef.current === heights;
+    const isSameColors = lastAppliedColorsRef.current === colors;
+    const isSameRes = lastResRef.current === terrainConfig.resolution;
+    const isSameSize = lastSizeRef.current === terrainConfig.size;
+    const isSameSmooth = lastSmoothRef.current === terrainConfig.smoothShading;
+
+    if (isSameHeights && isSameColors && isSameRes && isSameSize && isSameSmooth) {
+      return;
+    }
+
+    lastAppliedHeightsRef.current = heights;
+    lastAppliedColorsRef.current = colors;
+    lastResRef.current = terrainConfig.resolution;
+    lastSizeRef.current = terrainConfig.size;
+    lastSmoothRef.current = terrainConfig.smoothShading;
 
     let geo = terrain.geometry as THREE.BufferGeometry;
     const posAttr = geo.attributes.position;
@@ -478,7 +639,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     // Apply vertex colors (in-place buffer update for zero GC overhead and instant response)
     if (!geo.attributes.color || geo.attributes.color.count !== heights.length) {
       geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
-      (terrain.material as THREE.MeshStandardMaterial).needsUpdate = true;
+      (terrain.material as THREE.MeshLambertMaterial).needsUpdate = true;
     } else {
       const colArr = geo.attributes.color.array as Float32Array;
       colArr.set(colors);
@@ -486,7 +647,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     }
 
     // Sync material flatShading vs smoothShading
-    const mat = terrain.material as THREE.MeshStandardMaterial;
+    const mat = terrain.material as THREE.MeshLambertMaterial;
     if (mat) {
       const wantFlat = !terrainConfig.smoothShading;
       if (mat.flatShading !== wantFlat) {
@@ -496,97 +657,269 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     }
 
     geo.computeVertexNormals();
+
+    // Ensure terrain matrix remains strictly static
+    terrain.matrixAutoUpdate = false;
+    terrain.updateMatrix();
   }, [heights, colors, terrainConfig.resolution, terrainConfig.size, terrainConfig.smoothShading]);
 
-  // Sync water level, size, and biome visuals
+  // Sync atmosphere, sky, fog, lighting, and water visuals based on Biome, TimeOfDay, and GraphicsPreset
   useEffect(() => {
-    const palette = BIOME_PALETTES[terrainConfig.biome] || BIOME_PALETTES.archipelago;
-    if (sceneRef.current) {
-      sceneRef.current.background = new THREE.Color(palette.skyColor);
-      sceneRef.current.fog = new THREE.FogExp2(palette.fogColor, 0.0038);
+    if (!sceneRef.current || !keyLightRef.current || !ambientLightRef.current) return;
+    const currentPreset = normalizePreset(graphicsPreset, performanceMode);
+    const atm = getAtmosphereSettings(terrainConfig.biome, timeOfDay);
+
+    // 1. Sky & Horizon Fog (FogExp2 matching sky/horizon background color)
+    sceneRef.current.background = new THREE.Color(atm.skyColor);
+    if (currentPreset === 'LOW') {
+      sceneRef.current.fog = null;
+    } else {
+      sceneRef.current.fog = new THREE.FogExp2(
+        atm.fogColor,
+        currentPreset === 'HIGH' ? atm.fogDensity * 1.05 : atm.fogDensity
+      );
     }
+
+    // 2. Warm dimensional directional light & ambient fill
+    const key = keyLightRef.current;
+    const amb = ambientLightRef.current;
+    key.color.setHex(atm.sunColor);
+    key.intensity = atm.sunIntensity;
+    key.position.set(...atm.sunPos);
+
+    amb.color.setHex(atm.ambientColor);
+    amb.intensity = atm.ambientIntensity;
+
+    // 3. Water mesh color & level
     if (waterMeshRef.current) {
       waterMeshRef.current.position.y = terrainConfig.waterLevel;
-      (waterMeshRef.current.material as THREE.MeshStandardMaterial).color.set(palette.waterColor);
+      const palette = BIOME_PALETTES[terrainConfig.biome] || BIOME_PALETTES.archipelago;
+      (waterMeshRef.current.material as THREE.MeshPhongMaterial).color.set(palette.waterColor);
     }
-  }, [terrainConfig.biome, terrainConfig.waterLevel]);
+  }, [terrainConfig.biome, terrainConfig.waterLevel, timeOfDay, graphicsPreset, performanceMode]);
 
-  // Sync lighting based on TimeOfDay
+  // Dynamic Graphics Preset Adjustments: Shadows, Pixel Ratio, and Water Flatness
   useEffect(() => {
-    if (!keyLightRef.current || !hemiLightRef.current || !sceneRef.current) return;
-    const key = keyLightRef.current;
-    const hemi = hemiLightRef.current;
-    const scene = sceneRef.current;
+    if (!rendererRef.current) return;
+    const currentPreset = normalizePreset(graphicsPreset, performanceMode);
+    const isHeadlessOrBot =
+      Boolean(navigator.webdriver) ||
+      /HeadlessChrome|Headless/i.test(navigator.userAgent);
 
-    switch (timeOfDay) {
-      case 'golden':
-        key.color.setHex(0xffaa55);
-        key.intensity = 2.4;
-        key.position.set(60, 30, 60);
-        hemi.color.setHex(0xffedd5);
-        hemi.groundColor.setHex(0x78350f);
-        break;
-      case 'cyberpunk':
-        key.color.setHex(0x06b6d4);
-        key.intensity = 1.4;
-        key.position.set(-40, 60, -30);
-        hemi.color.setHex(0x38bdf8);
-        hemi.groundColor.setHex(0x581c87);
-        break;
-      case 'sunset':
-        key.color.setHex(0xf43f5e);
-        key.intensity = 2.0;
-        key.position.set(70, 20, 20);
-        hemi.color.setHex(0xfbcfe8);
-        hemi.groundColor.setHex(0x312e81);
-        break;
-      case 'night':
-        key.color.setHex(0x60a5fa);
-        key.intensity = 0.5;
-        key.position.set(-30, 70, 40);
-        hemi.color.setHex(0x1e1b4b);
-        hemi.groundColor.setHex(0x020617);
-        break;
-      case 'day':
-      default:
-        key.color.setHex(0xfff5ea);
-        key.intensity = 1.8;
-        key.position.set(50, 80, 45);
-        hemi.color.setHex(0xfff8e7);
-        hemi.groundColor.setHex(0x1e293b);
-        break;
+    // Resolution scaling per preset: LOW = 1.0, MEDIUM = 1.25, HIGH = 1.5
+    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const targetRatio = currentPreset === 'LOW' ? 1.0 : currentPreset === 'MEDIUM' ? 1.25 : 1.5;
+    const effectivePixelRatio = isHeadlessOrBot ? 1 : Math.min(dpr, targetRatio);
+    rendererRef.current.setPixelRatio(effectivePixelRatio);
+
+    // Shadow Map configuration
+    const enableShadows = currentPreset !== 'LOW';
+    if (rendererRef.current.shadowMap) {
+      rendererRef.current.shadowMap.enabled = enableShadows;
+      if (enableShadows) {
+        rendererRef.current.shadowMap.type = THREE.PCFSoftShadowMap;
+        rendererRef.current.shadowMap.needsUpdate = true;
+      }
     }
-  }, [timeOfDay]);
+    if (keyLightRef.current) {
+      keyLightRef.current.castShadow = enableShadows;
+      if (keyLightRef.current.shadow) {
+        const res = currentPreset === 'HIGH' ? 1024 : 512;
+        keyLightRef.current.shadow.mapSize.set(res, res);
+        keyLightRef.current.shadow.bias = currentPreset === 'HIGH' ? -0.0003 : -0.0004;
+        if (keyLightRef.current.shadow.map) {
+          keyLightRef.current.shadow.map.dispose();
+          (keyLightRef.current.shadow.map as any) = null;
+        }
+      }
+    }
 
-  // Sync 3D placed objects whenever placedObjects changes
+    if (terrainMeshRef.current) {
+      terrainMeshRef.current.receiveShadow = enableShadows;
+    }
+
+    // Reset water wave displacement if leaving HIGH mode
+    if (currentPreset !== 'HIGH' && waterMeshRef.current) {
+      const geo = waterMeshRef.current.geometry as THREE.BufferGeometry;
+      const pos = geo.attributes.position.array as Float32Array;
+      const count = geo.attributes.position.count;
+      let changed = false;
+      for (let i = 0; i < count; i++) {
+        if (pos[i * 3 + 1] !== 0) {
+          pos[i * 3 + 1] = 0;
+          changed = true;
+        }
+      }
+      if (changed) {
+        geo.attributes.position.needsUpdate = true;
+        geo.computeVertexNormals();
+      }
+    }
+  }, [graphicsPreset, performanceMode]);
+
+  // Sync 3D placed objects whenever placedObjects changes with GPU Instancing (drops draw calls by ~98%!)
   useEffect(() => {
     const group = objectsGroupRef.current;
     if (!group) return;
 
-    // Clear existing objects
+    // Clear existing objects and dispose old instanced geometry/matrix buffers
     while (group.children.length > 0) {
       const child = group.children[0];
       group.remove(child);
+      if ((child as THREE.InstancedMesh).isInstancedMesh) {
+        (child as THREE.InstancedMesh).dispose?.();
+      }
     }
 
-    // Instantiate and place each object
-    placedObjects.forEach((obj) => {
-      let modelMesh: THREE.Group | null = null;
-      if (obj.category === 'custom' && obj.customModelKey) {
-        modelMesh = getCustomModelClone(obj.customModelKey);
-      }
-      if (!modelMesh) {
-        modelMesh = instantiateModel(obj.type);
-      }
+    if (placedObjects.length === 0) {
+      if (selectionBoxRef.current) selectionBoxRef.current.visible = false;
+      animatedRotorsRef.current = [];
+      return;
+    }
 
+    const isMobileDevice =
+      typeof navigator !== 'undefined' &&
+      (/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        (typeof window !== 'undefined' && window.innerWidth < 768));
+
+    // Models with animated sub-components (windmills, turbines) remain as separate groups so blades can spin
+    const animatedTypes = new Set(['stone_windmill', 'wind_turbine']);
+    const animatedObjects: PlacedObject[] = [];
+    const instancedGroups = new Map<string, PlacedObject[]>();
+
+    placedObjects.forEach((obj) => {
+      if (animatedTypes.has(obj.type)) {
+        animatedObjects.push(obj);
+      } else {
+        const key = obj.category === 'custom' && obj.customModelKey ? `custom_${obj.customModelKey}` : obj.type;
+        const list = instancedGroups.get(key);
+        if (list) {
+          list.push(obj);
+        } else {
+          instancedGroups.set(key, [obj]);
+        }
+      }
+    });
+
+    // 1. Render all repeated static models as InstancedMesh (merges 100+ items into 1-2 draw calls per part)
+    instancedGroups.forEach((instances, modelKey) => {
+      if (instances.length === 0) return;
+      const firstObj = instances[0];
+      let template: THREE.Group | null = null;
+      if (firstObj.category === 'custom' && firstObj.customModelKey) {
+        template = getCustomModelClone(firstObj.customModelKey);
+      }
+      if (!template) {
+        template = instantiateModel(firstObj.type);
+      }
+      if (!template) return;
+
+      template.updateMatrixWorld(true);
+
+      interface PartInfo {
+        geometry: THREE.BufferGeometry;
+        material: THREE.Material | THREE.Material[];
+        localMatrix: THREE.Matrix4;
+        castShadow: boolean;
+        receiveShadow: boolean;
+        name: string;
+      }
+      const parts: PartInfo[] = [];
+
+      template.traverse((c) => {
+        if ((c as THREE.Mesh).isMesh) {
+          const m = c as THREE.Mesh;
+          parts.push({
+            geometry: m.geometry,
+            material: m.material,
+            localMatrix: m.matrixWorld.clone(),
+            castShadow: m.castShadow,
+            receiveShadow: m.receiveShadow,
+            name: m.name,
+          });
+        }
+      });
+
+      const count = instances.length;
+      const isFoliageOrGrass =
+        firstObj.type.includes('grass') ||
+        firstObj.type.includes('flower') ||
+        firstObj.category === 'foliage' ||
+        firstObj.category === 'path';
+
+      parts.forEach((part, partIdx) => {
+        const instMesh = new THREE.InstancedMesh(part.geometry, part.material, count);
+        instMesh.name = `${modelKey}_part_${partIdx}`;
+        instMesh.frustumCulled = true;
+
+        // Shadow configuration: disabled completely in LOW, active for solid structures in MEDIUM & HIGH
+        const currentPreset = normalizePreset(graphicsPreset, performanceMode);
+        const enableShadow = currentPreset !== 'LOW' && !isFoliageOrGrass;
+        instMesh.castShadow = enableShadow && part.castShadow;
+        instMesh.receiveShadow = enableShadow && part.receiveShadow;
+
+        (instMesh as any).userData = {
+          isInstanced: true,
+          modelKey,
+          objectIds: instances.map((o) => o.id),
+        };
+
+        for (let i = 0; i < count; i++) {
+          const obj = instances[i];
+          _dummyObj.position.set(...obj.position);
+          _dummyObj.rotation.set(...obj.rotation);
+          _dummyObj.scale.set(...obj.scale);
+          _dummyObj.updateMatrix();
+
+          _combinedMat.multiplyMatrices(_dummyObj.matrix, part.localMatrix);
+          instMesh.setMatrixAt(i, _combinedMat);
+        }
+
+        instMesh.instanceMatrix.needsUpdate = true;
+        instMesh.computeBoundingSphere();
+
+        // Rule 1: Nonaktifkan matrixAutoUpdate untuk semua mesh lingkungan statis (pohon, bangunan, mercusuar, rumput)
+        instMesh.matrixAutoUpdate = false;
+        instMesh.updateMatrix();
+        instMesh.updateMatrixWorld(true);
+
+        group.add(instMesh);
+      });
+    });
+
+    // 2. Render animated objects as standard Groups (with animated rotors)
+    animatedObjects.forEach((obj) => {
+      let modelMesh: THREE.Group | null = instantiateModel(obj.type);
       modelMesh.name = obj.id;
       modelMesh.position.set(...obj.position);
       modelMesh.rotation.set(...obj.rotation);
       modelMesh.scale.set(...obj.scale);
       (modelMesh as any).userData = { objectId: obj.id };
+      modelMesh.updateMatrix();
+      modelMesh.matrixAutoUpdate = false;
 
+      modelMesh.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          child.frustumCulled = true;
+          if (currentPreset === 'LOW') {
+            child.castShadow = false;
+            child.receiveShadow = false;
+          } else {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        }
+        // Rule 1: Nonaktifkan matrixAutoUpdate untuk sub-mesh statis (hanya rotor yang berputar di animate)
+        if (child.name !== 'windmill_rotor' && child.name !== 'turbine_rotor') {
+          child.updateMatrix();
+          child.matrixAutoUpdate = false;
+        }
+      });
       group.add(modelMesh);
     });
+
+    group.matrixAutoUpdate = false;
+    group.updateMatrix();
 
     // Cache animated rotors once here to avoid per-frame scene graph traversal
     const rotors: { obj: THREE.Object3D; speed: number }[] = [];
@@ -599,12 +932,36 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     });
     animatedRotorsRef.current = rotors;
 
-    // Update selection box if any selected
+    // 3. Selection Box Helper update
     if (selectionBoxRef.current) {
       if (selectedObjectId) {
-        const found = group.children.find((c) => (c as any).userData?.objectId === selectedObjectId);
-        if (found) {
-          selectionBoxRef.current.setFromObject(found);
+        const selectedObj = placedObjects.find((o) => o.id === selectedObjectId);
+        if (selectedObj) {
+          const directChild = group.children.find((c) => (c as any).userData?.objectId === selectedObjectId);
+          if (directChild) {
+            selectionBoxRef.current.setFromObject(directChild);
+          } else {
+            const isGrass = selectedObj.type.includes('grass') || selectedObj.type.includes('flower');
+            const isTree = selectedObj.type.includes('tree');
+            const isBuilding = selectedObj.category === 'building' || selectedObj.category === 'cyber';
+            const boxW = isGrass ? 1.8 : isTree ? 3.0 : isBuilding ? 5.2 : 3.2;
+            const boxH = isGrass ? 1.4 : isTree ? 5.5 : isBuilding ? 7.0 : 4.0;
+
+            _selectionDummy.geometry.dispose();
+            _selectionDummy.geometry = new THREE.BoxGeometry(
+              boxW * selectedObj.scale[0],
+              boxH * selectedObj.scale[1],
+              boxW * selectedObj.scale[2]
+            );
+            _selectionDummy.position.set(
+              selectedObj.position[0],
+              selectedObj.position[1] + (boxH * selectedObj.scale[1]) / 2,
+              selectedObj.position[2]
+            );
+            _selectionDummy.rotation.set(...selectedObj.rotation);
+            _selectionDummy.updateMatrixWorld(true);
+            selectionBoxRef.current.setFromObject(_selectionDummy);
+          }
           selectionBoxRef.current.visible = true;
         } else {
           selectionBoxRef.current.visible = false;
@@ -613,7 +970,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         selectionBoxRef.current.visible = false;
       }
     }
-  }, [placedObjects, selectedObjectId]);
+  }, [placedObjects, selectedObjectId, graphicsPreset, performanceMode]);
 
   // Update ghost preview when activePaletteItem or brushSettings change
   useEffect(() => {
@@ -686,13 +1043,24 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     const intersects = _raycaster.intersectObjects(group.children, true);
 
     if (intersects.length > 0) {
-      // Find top group child with userData.objectId
-      let curr: THREE.Object3D | null = intersects[0].object;
-      while (curr && curr.parent !== group) {
-        curr = curr.parent;
-      }
-      if (curr && (curr as any).userData?.objectId) {
-        return (curr as any).userData.objectId;
+      for (let i = 0; i < intersects.length; i++) {
+        const hit = intersects[i];
+        const instMesh = hit.object as THREE.InstancedMesh;
+        if (instMesh.isInstancedMesh && hit.instanceId !== undefined) {
+          const ids = (instMesh as any).userData?.objectIds;
+          if (ids && ids[hit.instanceId]) {
+            return ids[hit.instanceId];
+          }
+        }
+
+        // Find top group child with userData.objectId (e.g. animated windmills)
+        let curr: THREE.Object3D | null = hit.object;
+        while (curr && curr.parent !== group) {
+          curr = curr.parent;
+        }
+        if (curr && (curr as any).userData?.objectId) {
+          return (curr as any).userData.objectId;
+        }
       }
     }
     return null;
@@ -754,6 +1122,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         geo.computeVertexNormals();
       }
 
+      lastAppliedHeightsRef.current = newHeights;
+      lastAppliedColorsRef.current = newColors;
+
       if (onTerrainBuffersChange) {
         onTerrainBuffersChange(newHeights, newColors);
       } else {
@@ -787,6 +1158,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         geo.computeVertexNormals();
       }
 
+      lastAppliedHeightsRef.current = newHeights;
       onHeightmapChange(newHeights);
     }
   };

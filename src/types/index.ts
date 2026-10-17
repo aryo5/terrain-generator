@@ -86,7 +86,9 @@ export interface BrushSettings {
 
 export type TimeOfDay = 'day' | 'golden' | 'cyberpunk' | 'sunset' | 'night';
 
-export type PerformanceMode = 'mobile' | 'balanced' | 'ultra';
+export type GraphicsPreset = 'LOW' | 'MEDIUM' | 'HIGH';
+
+export type PerformanceMode = GraphicsPreset | 'mobile' | 'balanced' | 'ultra';
 
 export interface CustomAssetRecord {
   id: string;

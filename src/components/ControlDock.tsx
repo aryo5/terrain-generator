@@ -19,6 +19,10 @@ import {
   Check,
   Trees,
   TreePine,
+  Sprout,
+  Flower2,
+  Wheat,
+  Shuffle,
   Building2,
   Building,
   Wind,
@@ -34,12 +38,14 @@ import {
   MapPin,
   SlidersHorizontal,
   Palette,
+  Sliders,
 } from 'lucide-react';
 import {
   BiomeType,
   BrushMode,
   BrushSettings,
   CustomAssetRecord,
+  GraphicsPreset,
   ObjectCategory,
   PaletteItem,
   PerformanceMode,
@@ -60,6 +66,10 @@ interface ControlDockProps {
   customAssets: CustomAssetRecord[];
   onUploadFile: (file: File) => Promise<void>;
   onAutoPopulateBiome: (density: number) => void;
+  onScatterSpecificObject?: (item: PaletteItem, count: number, replaceExisting?: boolean) => void;
+  onScatterBuildings?: (count: number, replaceExisting?: boolean) => void;
+  onScatterVegetation?: (count: number, replaceExisting?: boolean) => void;
+  onScatterMeadowGrass?: (count: number, replaceExisting?: boolean) => void;
   onBuildTrail?: () => void;
   onClearAllObjects: () => void;
   placedObjects: PlacedObject[];
@@ -74,8 +84,11 @@ interface ControlDockProps {
   onExportHeightmap: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
-  performanceMode: PerformanceMode;
-  onUpdatePerformanceMode: (mode: PerformanceMode) => void;
+  graphicsPreset?: GraphicsPreset;
+  onUpdateGraphicsPreset?: (preset: GraphicsPreset) => void;
+  onOpenGraphicsSettings?: () => void;
+  performanceMode?: PerformanceMode;
+  onUpdatePerformanceMode?: (mode: PerformanceMode) => void;
 }
 
 type TabType = 'terrain' | 'sculpt' | 'place' | 'assets' | 'export';
@@ -84,6 +97,9 @@ type TabType = 'terrain' | 'sculpt' | 'place' | 'assets' | 'export';
 const ICON_MAP: Record<string, React.ElementType> = {
   Trees,
   TreePine,
+  Sprout,
+  Flower2,
+  Wheat,
   Building2,
   Building,
   Wind,
@@ -110,6 +126,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   customAssets,
   onUploadFile,
   onAutoPopulateBiome,
+  onScatterSpecificObject,
+  onScatterBuildings,
+  onScatterVegetation,
+  onScatterMeadowGrass,
   onBuildTrail,
   onClearAllObjects,
   placedObjects,
@@ -124,12 +144,16 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   onExportHeightmap,
   isCollapsed,
   onToggleCollapse,
+  graphicsPreset = 'MEDIUM',
+  onUpdateGraphicsPreset,
+  onOpenGraphicsSettings,
   performanceMode,
   onUpdatePerformanceMode,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('terrain');
   const [paletteCategory, setPaletteCategory] = useState<string>('all');
   const [autoScatterCount, setAutoScatterCount] = useState<number>(30);
+  const [replaceMode, setReplaceMode] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -419,43 +443,80 @@ export const ControlDock: React.FC<ControlDockProps> = ({
               </div>
             </div>
 
-            {/* Performance Mode & Mobile Profile Selector */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/80 gap-2">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
-                  <Zap className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-200">Graphics & Mobile Tuning</div>
-                  <div className="text-[10px] text-slate-400">
-                    {performanceMode === 'mobile' ? '⚡ Mobile Profile: Clamped pixel ratio, zero vertex buffer updates, 60fps battery saver' : performanceMode === 'balanced' ? '⚖️ Balanced: Smooth rendering with adaptive shadows' : '✨ Ultra: High resolution mesh, studio PBR'}
+            {/* Graphics Settings & Mobile Tuning Selector */}
+            {(() => {
+              const currentP: GraphicsPreset = graphicsPreset || (performanceMode === 'ultra' ? 'HIGH' : performanceMode === 'mobile' ? 'LOW' : 'MEDIUM');
+              return (
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                      <Sliders className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-200">Pengatur Grafis (Graphics Settings)</span>
+                        <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-slate-700 text-emerald-400">
+                          {currentP}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {currentP === 'LOW'
+                          ? '⚡ LOW: Matikan shadow, pixel ratio 1.0, fog off, hemat baterai maksimal'
+                          : currentP === 'MEDIUM'
+                          ? '⚖️ MEDIUM (Default): Shadow 512×512, pixel ratio 1.25, kabut halus, 40-60 FPS stabil'
+                          : '✨ HIGH: Shadow 1024×1024, pixel ratio 1.5, kabut penuh + ombak air sinusoide dinamis'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
+                    {(['LOW', 'MEDIUM', 'HIGH'] as GraphicsPreset[]).map((p) => {
+                      const isSel = currentP === p;
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => {
+                            if (onUpdateGraphicsPreset) {
+                              onUpdateGraphicsPreset(p);
+                            } else if (onUpdatePerformanceMode) {
+                              onUpdatePerformanceMode(p === 'LOW' ? 'mobile' : p === 'MEDIUM' ? 'balanced' : 'ultra');
+                            }
+                            const res = p === 'LOW' ? 28 : p === 'MEDIUM' ? 40 : 52;
+                            onUpdateTerrainConfig({ resolution: res });
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            isSel
+                              ? p === 'LOW'
+                                ? 'bg-emerald-600 text-white shadow-md'
+                                : p === 'MEDIUM'
+                                ? 'bg-amber-600 text-white shadow-md'
+                                : 'bg-purple-600 text-white shadow-md'
+                              : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-750'
+                          }`}
+                        >
+                          {p === 'LOW' ? '⚡ LOW' : p === 'MEDIUM' ? '⚖️ MEDIUM' : '✨ HIGH'}
+                        </button>
+                      );
+                    })}
+
+                    {onOpenGraphicsSettings && (
+                      <button
+                        type="button"
+                        onClick={onOpenGraphicsSettings}
+                        title="Buka Menu Pengatur Grafis Lengkap"
+                        className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors ml-1"
+                      >
+                        <Sliders className="w-4 h-4 text-emerald-400" />
+                      </button>
+                    )}
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-1 self-end sm:self-auto shrink-0">
-                {(['mobile', 'balanced', 'ultra'] as PerformanceMode[]).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => {
-                      onUpdatePerformanceMode(m);
-                      const res = m === 'mobile' ? 44 : m === 'balanced' ? 52 : 64;
-                      onUpdateTerrainConfig({ resolution: res });
-                    }}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold capitalize transition-colors ${
-                      performanceMode === m
-                        ? 'bg-emerald-600 text-white shadow-md'
-                        : 'bg-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {m === 'mobile' ? '⚡ Mobile' : m === 'balanced' ? '⚖️ Balanced' : '✨ Ultra'}
-                  </button>
-                ))}
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Terrain Procedural Parameters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 bg-slate-800/40 p-3 rounded-xl border border-slate-700/60">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 bg-slate-800/40 p-3 rounded-xl border border-slate-700/60">
               {/* Seed Control */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">World Seed</label>
@@ -562,6 +623,26 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                   value={terrainConfig.waterLevel}
                   onChange={(e) => onUpdateTerrainConfig({ waterLevel: parseFloat(e.target.value) })}
                   className="w-full accent-cyan-500 cursor-pointer"
+                />
+              </div>
+
+              {/* Segmen Poligon (Rule 4: Turunkan segmen/poligon pada terrain) */}
+              <div>
+                <div className="flex justify-between text-xs font-semibold text-slate-300 mb-1">
+                  <span>Segmen Poligon</span>
+                  <span className="text-emerald-400 font-mono font-bold">
+                    {terrainConfig.resolution}x{terrainConfig.resolution}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="24"
+                  max="64"
+                  step="4"
+                  value={terrainConfig.resolution}
+                  onChange={(e) => onUpdateTerrainConfig({ resolution: parseInt(e.target.value) || 28 })}
+                  className="w-full accent-emerald-500 cursor-pointer"
+                  title="Turunkan segmen poligon mesh untuk vertex lebih sedikit dan rendering lebih ringan di mobile"
                 />
               </div>
             </div>
@@ -967,18 +1048,18 @@ export const ControlDock: React.FC<ControlDockProps> = ({
         {/* TAB 3: Place Objects */}
         {activeTab === 'place' && (
           <div className="space-y-3">
-            {/* Category Filter Chips & Auto-Populate Bar */}
+            {/* Category Filter Chips */}
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
               <div className="flex items-center gap-1.5 overflow-x-auto">
                 {[
                   { id: 'all', label: 'All Items' },
+                  { id: 'foliage', label: 'Rumput & Pohon 🌱' },
+                  { id: 'building', label: 'Bangunan 🏡' },
                   { id: 'path', label: 'Jalan & Jembatan 🪨' },
-                  { id: 'foliage', label: 'Foliage' },
-                  { id: 'building', label: 'Buildings' },
-                  { id: 'cyber', label: 'Cyberpunk' },
-                  { id: 'fantasy', label: 'Magic & Sci-Fi' },
-                  { id: 'prop', label: 'Props' },
-                  { id: 'custom', label: 'Custom' },
+                  { id: 'cyber', label: 'Cyberpunk ⚡' },
+                  { id: 'fantasy', label: 'Magic & Sci-Fi ✨' },
+                  { id: 'prop', label: 'Props 🏮' },
+                  { id: 'custom', label: 'Custom 📦' },
                 ].map((c) => (
                   <button
                     key={c.id}
@@ -995,38 +1076,161 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                 ))}
               </div>
 
-              {/* Auto Scatter Preset */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Density:</span>
-                <input
-                  type="range"
-                  min="10"
-                  max="60"
-                  step="5"
-                  value={autoScatterCount}
-                  onChange={(e) => setAutoScatterCount(parseInt(e.target.value))}
-                  className="w-20 accent-emerald-500 cursor-pointer"
-                  title={`${autoScatterCount} objects`}
-                />
+              {placedObjects.length > 0 && (
+                <button
+                  type="button"
+                  onClick={onClearAllObjects}
+                  className="text-xs text-rose-400 hover:text-rose-300 px-2 py-1 flex items-center gap-1"
+                  title="Remove all placed objects from island"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus Semua ({placedObjects.length})</span>
+                </button>
+              )}
+            </div>
+
+            {/* Procedural Scatter & Distribution Suite */}
+            <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/80 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-6 h-6 rounded bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-xs font-bold text-slate-100">Alat Sebar & Acak Prosedural:</span>
+                  <span className="text-[10px] text-slate-400 hidden md:inline">
+                    (Sebar objek terpilih, acak bangunan pemukiman, atau sebar padang rumput & tumbuhan)
+                  </span>
+                </div>
+
+                {/* Density Slider & Quick Counts */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-400 font-semibold">Jumlah:</span>
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    step="5"
+                    value={autoScatterCount}
+                    onChange={(e) => setAutoScatterCount(parseInt(e.target.value))}
+                    className="w-20 accent-emerald-500 cursor-pointer"
+                    title={`Sebar ${autoScatterCount} unit objek`}
+                  />
+                  <span className="text-xs font-mono font-bold text-emerald-400 w-8 text-right">
+                    {autoScatterCount}x
+                  </span>
+                  <div className="hidden xs:flex items-center gap-1">
+                    {[15, 30, 60, 100].map((cnt) => (
+                      <button
+                        key={cnt}
+                        type="button"
+                        onClick={() => setAutoScatterCount(cnt)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                          autoScatterCount === cnt
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-700/80 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        {cnt}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Toggle Replace vs Append */}
+                  <label className="flex items-center gap-1 text-[11px] text-slate-400 cursor-pointer pl-1 border-l border-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={replaceMode}
+                      onChange={(e) => setReplaceMode(e.target.checked)}
+                      className="w-3.5 h-3.5 accent-emerald-500 rounded cursor-pointer"
+                    />
+                    <span title="Ganti objek sejenis yang sudah ada daripada menumpuk">Ganti lama</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Action Buttons Row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-1.5 pt-1">
+                {/* 1. Sebar Objek Terpilih */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activePaletteItem && onScatterSpecificObject) {
+                      onScatterSpecificObject(activePaletteItem, autoScatterCount, replaceMode);
+                    }
+                  }}
+                  disabled={!activePaletteItem}
+                  className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm ${
+                    activePaletteItem
+                      ? 'bg-amber-600 hover:bg-amber-500 text-white active:scale-95'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                  }`}
+                  title={
+                    activePaletteItem
+                      ? `Sebar ${autoScatterCount}x ${activePaletteItem.name} di seluruh pulau`
+                      : 'Pilih salah satu objek di palet bawah untuk disebar'
+                  }
+                >
+                  <Wheat className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">
+                    {activePaletteItem ? `Sebar: ${activePaletteItem.name}` : 'Sebar Objek Terpilih'}
+                  </span>
+                </button>
+
+                {/* 2. Acak Bangunan */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onScatterBuildings) {
+                      onScatterBuildings(Math.min(autoScatterCount, 24), replaceMode);
+                    }
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-sm active:scale-95"
+                  title="Sebar acak rumah chalet, kincir angin, mercusuar & bangunan pemukiman di daratan"
+                >
+                  <Building2 className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Acak Bangunan 🏡</span>
+                </button>
+
+                {/* 3. Acak Tumbuhan */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onScatterVegetation) {
+                      onScatterVegetation(autoScatterCount, replaceMode);
+                    }
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-sm active:scale-95"
+                  title="Sebar acak pepohonan oak, pinus, semak, dan rumput padang di daratan"
+                >
+                  <Trees className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Acak Tumbuhan 🌲</span>
+                </button>
+
+                {/* 4. Hamparan Rumput Padang */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onScatterMeadowGrass) {
+                      onScatterMeadowGrass(Math.max(autoScatterCount, 40), replaceMode);
+                    }
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-lime-600 hover:bg-lime-500 text-white text-xs font-bold transition-all shadow-sm active:scale-95 border border-lime-400/30"
+                  title="Penuhi seluruh area hijau pulau dengan hamparan padang rumput subur & bunga liar"
+                >
+                  <Sprout className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Rumput Padang 🌱</span>
+                </button>
+
+                {/* 5. Acak Bioma Mix */}
                 <button
                   type="button"
                   onClick={() => onAutoPopulateBiome(autoScatterCount)}
-                  className="flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors shadow-sm"
-                  title="Scatter biome-appropriate objects on the terrain"
+                  className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold transition-all shadow-sm active:scale-95 col-span-2 sm:col-span-1"
+                  title="Acak semua elemen bioma alami (bangunan + tumbuhan + lampu)"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Scatter Biome</span>
+                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-300" />
+                  <span className="truncate">Acak Bioma ✨</span>
                 </button>
-                {placedObjects.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={onClearAllObjects}
-                    className="text-xs text-rose-400 hover:text-rose-300 px-2 py-1"
-                    title="Remove all placed objects"
-                  >
-                    Clear All
-                  </button>
-                )}
               </div>
             </div>
 

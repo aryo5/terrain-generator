@@ -56,8 +56,8 @@ function normalizeImportedModel(object: THREE.Object3D, targetHeight = 5.0): THR
   object.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
       if (mesh.material) {
         if (Array.isArray(mesh.material)) {
           mesh.material.forEach((m) => {

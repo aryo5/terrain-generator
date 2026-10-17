@@ -69,13 +69,62 @@ export function makeFlatShadedGeo<T extends THREE.BufferGeometry>(geo: T): THREE
 /**
  * 1. Cyberpunk Skyscraper (Neo Tower - 8 composite parts)
  */
+/**
+ * Mobile-optimized materials (Rule 3):
+ * Uses MeshLambertMaterial for matte elements and MeshPhongMaterial (FlatShading)
+ * for metallic, shiny, or translucent elements. Zero heavy PBR fragment overhead.
+ */
+export function createMobileMat(options: {
+  color?: THREE.ColorRepresentation;
+  roughness?: number;
+  metalness?: number;
+  emissive?: THREE.ColorRepresentation;
+  emissiveIntensity?: number;
+  transparent?: boolean;
+  opacity?: number;
+  flatShading?: boolean;
+  shininess?: number;
+  wireframe?: boolean;
+  side?: THREE.Side;
+}): THREE.MeshLambertMaterial | THREE.MeshPhongMaterial {
+  const isMetallicOrShiny =
+    (options.metalness !== undefined && options.metalness >= 0.4) ||
+    (options.roughness !== undefined && options.roughness <= 0.3) ||
+    options.shininess !== undefined;
+
+  if (isMetallicOrShiny) {
+    return new THREE.MeshPhongMaterial({
+      color: options.color,
+      emissive: options.emissive,
+      emissiveIntensity: options.emissiveIntensity,
+      transparent: options.transparent,
+      opacity: options.opacity,
+      flatShading: options.flatShading ?? true,
+      shininess: options.shininess ?? Math.round((options.metalness ?? 0.3) * 60),
+      wireframe: options.wireframe,
+      side: options.side,
+    });
+  }
+
+  return new THREE.MeshLambertMaterial({
+    color: options.color,
+    emissive: options.emissive,
+    emissiveIntensity: options.emissiveIntensity,
+    transparent: options.transparent,
+    opacity: options.opacity,
+    flatShading: options.flatShading,
+    wireframe: options.wireframe,
+    side: options.side,
+  });
+}
+
 export function createCyberSkyscraper(): THREE.Group {
   const group = new THREE.Group();
   group.name = 'cyber_skyscraper';
 
   // 1. Foundation base podium
   const baseGeo = new THREE.BoxGeometry(6, 3, 6);
-  const baseMat = new THREE.MeshStandardMaterial({
+  const baseMat = createMobileMat({
     color: 0x111827,
     roughness: 0.8,
     metalness: 0.4,
@@ -88,7 +137,7 @@ export function createCyberSkyscraper(): THREE.Group {
 
   // 2. Main lower tower shaft
   const towerGeo = new THREE.BoxGeometry(4.8, 16, 4.8);
-  const towerMat = new THREE.MeshStandardMaterial({
+  const towerMat = createMobileMat({
     color: 0x1e293b,
     roughness: 0.3,
     metalness: 0.85,
@@ -101,7 +150,7 @@ export function createCyberSkyscraper(): THREE.Group {
 
   // 3. Setback upper penthouse block
   const upperGeo = new THREE.BoxGeometry(3.6, 6, 3.6);
-  const upperMat = new THREE.MeshStandardMaterial({
+  const upperMat = createMobileMat({
     color: 0x0f172a,
     roughness: 0.2,
     metalness: 0.9,
@@ -113,7 +162,7 @@ export function createCyberSkyscraper(): THREE.Group {
 
   // 4. Glowing Neon vertical light strips (Accent)
   const stripGeo = new THREE.BoxGeometry(0.2, 18, 0.2);
-  const stripMat = new THREE.MeshStandardMaterial({
+  const stripMat = createMobileMat({
     color: 0x06b6d4,
     emissive: 0x06b6d4,
     emissiveIntensity: 2.5,
@@ -127,7 +176,7 @@ export function createCyberSkyscraper(): THREE.Group {
 
   // 5. Rooftop Helipad Disc
   const helipadGeo = new THREE.CylinderGeometry(1.6, 1.6, 0.3, 16);
-  const helipadMat = new THREE.MeshStandardMaterial({
+  const helipadMat = createMobileMat({
     color: 0x334155,
     roughness: 0.5,
     metalness: 0.6,
@@ -138,7 +187,7 @@ export function createCyberSkyscraper(): THREE.Group {
 
   // 6. Helipad border neon ring
   const ringGeo = new THREE.TorusGeometry(1.5, 0.08, 8, 24);
-  const ringMat = new THREE.MeshStandardMaterial({
+  const ringMat = createMobileMat({
     color: 0xf43f5e,
     emissive: 0xf43f5e,
     emissiveIntensity: 3.0,
@@ -151,7 +200,7 @@ export function createCyberSkyscraper(): THREE.Group {
 
   // 7. Communications Spire Antenna
   const mastGeo = new THREE.CylinderGeometry(0.08, 0.2, 5, 8);
-  const mastMat = new THREE.MeshStandardMaterial({
+  const mastMat = createMobileMat({
     color: 0x94a3b8,
     metalness: 0.95,
     roughness: 0.15,
@@ -162,7 +211,7 @@ export function createCyberSkyscraper(): THREE.Group {
 
   // 8. Warning Strobe Beacon
   const beaconGeo = new THREE.SphereGeometry(0.2, 8, 8);
-  const beaconMat = new THREE.MeshStandardMaterial({
+  const beaconMat = createMobileMat({
     color: 0xff0055,
     emissive: 0xff0055,
     emissiveIntensity: 4.0,
@@ -187,7 +236,7 @@ export function createCyberApartment(): THREE.Group {
 
   // 1. Lower concrete base
   const bGeo = new THREE.BoxGeometry(7, 3, 5);
-  const bMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.8, metalness: 0.2 });
+  const bMat = createMobileMat({ color: 0x1f2937, roughness: 0.8, metalness: 0.2 });
   const b = new THREE.Mesh(bGeo, bMat);
   b.position.y = 1.5;
   b.castShadow = true;
@@ -195,7 +244,7 @@ export function createCyberApartment(): THREE.Group {
 
   // 2. Middle block with indented balconies
   const mGeo = new THREE.BoxGeometry(6.4, 6, 4.4);
-  const mMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4, metalness: 0.6 });
+  const mMat = createMobileMat({ color: 0x334155, roughness: 0.4, metalness: 0.6 });
   const m = new THREE.Mesh(mGeo, mMat);
   m.position.y = 6;
   m.castShadow = true;
@@ -203,7 +252,7 @@ export function createCyberApartment(): THREE.Group {
 
   // 3. Staggered modular balcony boxes
   const balcGeo = new THREE.BoxGeometry(2.2, 1.2, 0.6);
-  const balcMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.3, metalness: 0.7 });
+  const balcMat = createMobileMat({ color: 0xd97706, roughness: 0.3, metalness: 0.7 });
   const balc1 = new THREE.Mesh(balcGeo, balcMat);
   balc1.position.set(-1.8, 5.5, 2.4);
   const balc2 = new THREE.Mesh(balcGeo, balcMat);
@@ -212,21 +261,21 @@ export function createCyberApartment(): THREE.Group {
 
   // 4. Rooftop HVAC unit
   const hvacGeo = new THREE.BoxGeometry(1.8, 1.2, 2.0);
-  const hvacMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.6, metalness: 0.5 });
+  const hvacMat = createMobileMat({ color: 0x475569, roughness: 0.6, metalness: 0.5 });
   const hvac = new THREE.Mesh(hvacGeo, hvacMat);
   hvac.position.set(-1.5, 9.6, 0);
   group.add(hvac);
 
   // 5. Water tower cylinder
   const wtGeo = new THREE.CylinderGeometry(0.9, 0.9, 1.8, 12);
-  const wtMat = new THREE.MeshStandardMaterial({ color: 0x78716c, roughness: 0.7, metalness: 0.3 });
+  const wtMat = createMobileMat({ color: 0x78716c, roughness: 0.7, metalness: 0.3 });
   const wt = new THREE.Mesh(wtGeo, wtMat);
   wt.position.set(1.6, 9.9, 0.4);
   group.add(wt);
 
   // 6. Glowing billboard / neon sign
   const signGeo = new THREE.BoxGeometry(3.0, 1.4, 0.15);
-  const signMat = new THREE.MeshStandardMaterial({
+  const signMat = createMobileMat({
     color: 0x10b981,
     emissive: 0x10b981,
     emissiveIntensity: 2.2,
@@ -249,7 +298,7 @@ export function createPineTree(): THREE.Group {
 
   // 1. Tapered Wooden Trunk
   const trunkGeo = new THREE.CylinderGeometry(0.25, 0.45, 2.2, 7);
-  const trunkMat = new THREE.MeshStandardMaterial({
+  const trunkMat = createMobileMat({
     color: 0x5c3d2e,
     roughness: 0.9,
     metalness: 0.05,
@@ -261,7 +310,7 @@ export function createPineTree(): THREE.Group {
 
   // 2. Bottom Foliage Tier
   const botGeo = makeFlatShadedGeo(new THREE.ConeGeometry(2.4, 2.6, 7));
-  const foliageMat1 = new THREE.MeshStandardMaterial({
+  const foliageMat1 = createMobileMat({
     color: 0x1e5e3a,
     roughness: 0.75,
     metalness: 0.05,
@@ -273,7 +322,7 @@ export function createPineTree(): THREE.Group {
 
   // 3. Middle Foliage Tier (slight rotation for stylized asymmetry)
   const midGeo = makeFlatShadedGeo(new THREE.ConeGeometry(1.8, 2.2, 7));
-  const foliageMat2 = new THREE.MeshStandardMaterial({
+  const foliageMat2 = createMobileMat({
     color: 0x2d7a4c,
     roughness: 0.7,
     metalness: 0.05,
@@ -286,7 +335,7 @@ export function createPineTree(): THREE.Group {
 
   // 4. Top Crown Spire (lighter apex highlight)
   const topGeo = makeFlatShadedGeo(new THREE.ConeGeometry(1.2, 1.8, 7));
-  const foliageMat3 = new THREE.MeshStandardMaterial({
+  const foliageMat3 = createMobileMat({
     color: 0x48a065,
     roughness: 0.65,
     metalness: 0.05,
@@ -310,7 +359,7 @@ export function createBroadleafTree(): THREE.Group {
 
   // 1. Organic Trunk
   const trunkGeo = makeFlatShadedGeo(new THREE.CylinderGeometry(0.35, 0.6, 2.6, 8));
-  const trunkMat = new THREE.MeshStandardMaterial({
+  const trunkMat = createMobileMat({
     color: 0x6e473b,
     roughness: 0.85,
     metalness: 0.05,
@@ -321,12 +370,12 @@ export function createBroadleafTree(): THREE.Group {
   group.add(trunk);
 
   // Canopy Clusters (Stylized low-poly icos/spheres with baked face normals)
-  const leafMat = new THREE.MeshStandardMaterial({
+  const leafMat = createMobileMat({
     color: 0x55a630,
     roughness: 0.75,
     metalness: 0.05,
   });
-  const leafMatLight = new THREE.MeshStandardMaterial({
+  const leafMatLight = createMobileMat({
     color: 0x80b918,
     roughness: 0.70,
     metalness: 0.05,
@@ -365,6 +414,182 @@ export function createBroadleafTree(): THREE.Group {
 }
 
 /**
+ * 4b. Stylized Meadow Grass (Rumput Padang) with layered tufts and wildflowers
+ */
+export function createMeadowGrass(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'meadow_grass';
+
+  // Materials for meadow blades
+  const grassMatPrimary = createMobileMat({
+    color: 0x22c55e,
+    roughness: 0.65,
+    metalness: 0.05,
+  });
+  const grassMatHighlight = createMobileMat({
+    color: 0x84cc16,
+    roughness: 0.6,
+    metalness: 0.05,
+  });
+  const grassMatSpring = createMobileMat({
+    color: 0x4ade80,
+    roughness: 0.6,
+    metalness: 0.05,
+  });
+
+  // Grass blade geometries (low-poly 4-sided tapered pyramids)
+  const bladeTallGeo = makeFlatShadedGeo(new THREE.ConeGeometry(0.18, 1.4, 4));
+  const bladeMedGeo = makeFlatShadedGeo(new THREE.ConeGeometry(0.15, 1.1, 4));
+  const bladeSmallGeo = makeFlatShadedGeo(new THREE.ConeGeometry(0.12, 0.8, 4));
+
+  // Radiating cluster of curved/angled blades
+  const bladeConfigs = [
+    { geo: bladeTallGeo, mat: grassMatPrimary, x: 0, z: 0, rotX: 0.08, rotZ: 0.05, rotY: 0, scaleY: 1.1 },
+    { geo: bladeTallGeo, mat: grassMatHighlight, x: 0.25, z: 0.1, rotX: 0.22, rotZ: -0.15, rotY: 0.8, scaleY: 1.0 },
+    { geo: bladeMedGeo, mat: grassMatSpring, x: -0.22, z: 0.18, rotX: 0.25, rotZ: 0.28, rotY: 1.6, scaleY: 0.95 },
+    { geo: bladeTallGeo, mat: grassMatPrimary, x: -0.15, z: -0.25, rotX: -0.3, rotZ: 0.18, rotY: 2.4, scaleY: 1.05 },
+    { geo: bladeMedGeo, mat: grassMatHighlight, x: 0.28, z: -0.2, rotX: -0.25, rotZ: -0.3, rotY: 3.2, scaleY: 0.9 },
+    { geo: bladeSmallGeo, mat: grassMatSpring, x: 0.35, z: 0.0, rotX: 0.35, rotZ: -0.1, rotY: 4.1, scaleY: 0.85 },
+    { geo: bladeSmallGeo, mat: grassMatPrimary, x: -0.32, z: -0.05, rotX: -0.1, rotZ: 0.4, rotY: 4.9, scaleY: 0.8 },
+    { geo: bladeMedGeo, mat: grassMatHighlight, x: 0.1, z: 0.32, rotX: 0.38, rotZ: 0.1, rotY: 5.6, scaleY: 0.95 },
+  ];
+
+  bladeConfigs.forEach((cfg) => {
+    const blade = new THREE.Mesh(cfg.geo, cfg.mat);
+    blade.position.set(cfg.x, 0.5 * cfg.scaleY, cfg.z);
+    blade.rotation.set(cfg.rotX, cfg.rotY, cfg.rotZ);
+    blade.scale.set(0.7, cfg.scaleY, 1.2);
+    blade.castShadow = false;
+    blade.receiveShadow = false;
+    blade.frustumCulled = true;
+    group.add(blade);
+  });
+
+  // Wildflower accents (white and golden meadow blossoms)
+  const flowerMatWhite = createMobileMat({
+    color: 0xf8fafc,
+    roughness: 0.4,
+    metalness: 0.05,
+  });
+  const flowerMatYellow = createMobileMat({
+    color: 0xfacc15,
+    roughness: 0.3,
+    metalness: 0.1,
+  });
+  const flowerCenterMat = createMobileMat({
+    color: 0xf97316,
+    roughness: 0.5,
+  });
+
+  const stemGeo = makeFlatShadedGeo(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 4));
+  const blossomGeo = makeFlatShadedGeo(new THREE.DodecahedronGeometry(0.12, 0));
+  const centerDotGeo = makeFlatShadedGeo(new THREE.DodecahedronGeometry(0.06, 0));
+
+  // Flower 1: Golden meadow flower
+  const stem1 = new THREE.Mesh(stemGeo, grassMatPrimary);
+  stem1.position.set(0.18, 0.35, 0.15);
+  stem1.rotation.set(0.15, 0, -0.1);
+  stem1.frustumCulled = true;
+  group.add(stem1);
+
+  const flower1 = new THREE.Mesh(blossomGeo, flowerMatYellow);
+  flower1.position.set(0.24, 0.72, 0.18);
+  flower1.castShadow = false;
+  flower1.receiveShadow = false;
+  flower1.frustumCulled = true;
+  group.add(flower1);
+
+  const center1 = new THREE.Mesh(centerDotGeo, flowerCenterMat);
+  center1.position.set(0.24, 0.76, 0.18);
+  center1.frustumCulled = true;
+  group.add(center1);
+
+  // Flower 2: White meadow daisy
+  const stem2 = new THREE.Mesh(stemGeo, grassMatPrimary);
+  stem2.position.set(-0.16, 0.3, -0.12);
+  stem2.rotation.set(-0.1, 0, 0.2);
+  stem2.frustumCulled = true;
+  group.add(stem2);
+
+  const flower2 = new THREE.Mesh(blossomGeo, flowerMatWhite);
+  flower2.position.set(-0.22, 0.62, -0.15);
+  flower2.castShadow = false;
+  flower2.receiveShadow = false;
+  flower2.frustumCulled = true;
+  group.add(flower2);
+
+  const center2 = new THREE.Mesh(centerDotGeo, flowerMatYellow);
+  center2.position.set(-0.22, 0.65, -0.15);
+  center2.frustumCulled = true;
+  group.add(center2);
+
+  group.add(createContactShadowDisc(1.3));
+  return group;
+}
+
+/**
+ * 4c. Stylized Meadow Wildflowers Patch (Bunga Padang)
+ */
+export function createFlowerPatch(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'flower_patch';
+
+  const leafMat = createMobileMat({
+    color: 0x16a34a,
+    roughness: 0.7,
+    metalness: 0.05,
+  });
+
+  // Base lush foliage mounds
+  const mound1Geo = makeFlatShadedGeo(new THREE.DodecahedronGeometry(0.65, 0));
+  const mound1 = new THREE.Mesh(mound1Geo, leafMat);
+  mound1.position.set(0, 0.35, 0);
+  mound1.scale.set(1.2, 0.6, 1.2);
+  mound1.castShadow = false;
+  mound1.receiveShadow = false;
+  mound1.frustumCulled = true;
+  group.add(mound1);
+
+  const mound2Geo = makeFlatShadedGeo(new THREE.DodecahedronGeometry(0.5, 0));
+  const mound2 = new THREE.Mesh(mound2Geo, leafMat);
+  mound2.position.set(0.4, 0.25, -0.2);
+  mound2.scale.set(1.1, 0.5, 1.1);
+  mound2.castShadow = false;
+  mound2.receiveShadow = false;
+  mound2.frustumCulled = true;
+  group.add(mound2);
+
+  // Blooming colorful blossoms
+  const flowerColors = [0xec4899, 0xa855f7, 0x38bdf8, 0xfacc15, 0xf43f5e];
+  const blossomGeo = makeFlatShadedGeo(new THREE.DodecahedronGeometry(0.16, 0));
+
+  const blossomOffsets = [
+    { x: -0.25, y: 0.65, z: 0.15, col: flowerColors[0] },
+    { x: 0.15, y: 0.75, z: -0.1, col: flowerColors[1] },
+    { x: 0.45, y: 0.55, z: -0.2, col: flowerColors[2] },
+    { x: -0.1, y: 0.6, z: -0.3, col: flowerColors[3] },
+    { x: 0.3, y: 0.58, z: 0.25, col: flowerColors[4] },
+  ];
+
+  blossomOffsets.forEach((bo) => {
+    const mat = createMobileMat({
+      color: bo.col,
+      roughness: 0.35,
+      metalness: 0.05,
+    });
+    const b = new THREE.Mesh(blossomGeo, mat);
+    b.position.set(bo.x, bo.y, bo.z);
+    b.castShadow = false;
+    b.receiveShadow = false;
+    b.frustumCulled = true;
+    group.add(b);
+  });
+
+  group.add(createContactShadowDisc(1.5));
+  return group;
+}
+
+/**
  * 5. Medieval Stone Windmill (8 composite parts)
  */
 export function createStoneWindmill(): THREE.Group {
@@ -373,7 +598,7 @@ export function createStoneWindmill(): THREE.Group {
 
   // 1. Octagonal stone foundation
   const baseGeo = makeFlatShadedGeo(new THREE.CylinderGeometry(2.4, 2.8, 1.8, 8));
-  const stoneMat = new THREE.MeshStandardMaterial({
+  const stoneMat = createMobileMat({
     color: 0x64748b,
     roughness: 0.9,
     metalness: 0.1,
@@ -385,7 +610,7 @@ export function createStoneWindmill(): THREE.Group {
 
   // 2. Tapered timber tower
   const towerGeo = makeFlatShadedGeo(new THREE.CylinderGeometry(1.8, 2.3, 4.5, 8));
-  const woodMat = new THREE.MeshStandardMaterial({
+  const woodMat = createMobileMat({
     color: 0xa16207,
     roughness: 0.7,
     metalness: 0.05,
@@ -397,7 +622,7 @@ export function createStoneWindmill(): THREE.Group {
 
   // 3. Conical shingle roof
   const roofGeo = makeFlatShadedGeo(new THREE.ConeGeometry(2.2, 2.2, 8));
-  const roofMat = new THREE.MeshStandardMaterial({
+  const roofMat = createMobileMat({
     color: 0x991b1b,
     roughness: 0.6,
     metalness: 0.1,
@@ -409,7 +634,7 @@ export function createStoneWindmill(): THREE.Group {
 
   // 4. Windmill rotor hub
   const hubGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.6, 8);
-  const hubMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.2 });
+  const hubMat = createMobileMat({ color: 0x334155, metalness: 0.8, roughness: 0.2 });
   const hub = new THREE.Mesh(hubGeo, hubMat);
   hub.rotation.x = Math.PI / 2;
   hub.position.set(0, 5.8, 2.0);
@@ -420,13 +645,13 @@ export function createStoneWindmill(): THREE.Group {
   rotor.position.set(0, 5.8, 2.3);
   rotor.name = 'windmill_rotor';
 
-  const bladeMat = new THREE.MeshStandardMaterial({
+  const bladeMat = createMobileMat({
     color: 0xfef08a,
     roughness: 0.8,
     metalness: 0.05,
     side: THREE.DoubleSide,
   });
-  const beamMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 });
+  const beamMat = createMobileMat({ color: 0x451a03, roughness: 0.9 });
 
   for (let i = 0; i < 4; i++) {
     const angle = (i * Math.PI) / 2;
@@ -450,7 +675,7 @@ export function createStoneWindmill(): THREE.Group {
 
   // 6. Arched wooden doorway
   const doorGeo = new THREE.BoxGeometry(0.8, 1.4, 0.2);
-  const doorMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.85 });
+  const doorMat = createMobileMat({ color: 0x451a03, roughness: 0.85 });
   const door = new THREE.Mesh(doorGeo, doorMat);
   door.position.set(0, 0.7, 2.65);
   group.add(door);
@@ -468,7 +693,7 @@ export function createIslandLighthouse(): THREE.Group {
 
   // 1. Rocky footing foundation
   const rockGeo = makeFlatShadedGeo(new THREE.CylinderGeometry(2.8, 3.2, 1.2, 9));
-  const rockMat = new THREE.MeshStandardMaterial({
+  const rockMat = createMobileMat({
     color: 0x475569,
     roughness: 0.95,
     metalness: 0.1,
@@ -479,7 +704,7 @@ export function createIslandLighthouse(): THREE.Group {
 
   // 2. Lower white tower band
   const lowerGeo = new THREE.CylinderGeometry(2.0, 2.4, 4.0, 16);
-  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4, metalness: 0.1 });
+  const whiteMat = createMobileMat({ color: 0xf8fafc, roughness: 0.4, metalness: 0.1 });
   const lower = new THREE.Mesh(lowerGeo, whiteMat);
   lower.position.y = 1.2 + 2.0;
   lower.castShadow = true;
@@ -487,7 +712,7 @@ export function createIslandLighthouse(): THREE.Group {
 
   // 3. Middle red stripe band
   const redGeo = new THREE.CylinderGeometry(1.6, 2.0, 3.0, 16);
-  const redMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4, metalness: 0.1 });
+  const redMat = createMobileMat({ color: 0xdc2626, roughness: 0.4, metalness: 0.1 });
   const redBand = new THREE.Mesh(redGeo, redMat);
   redBand.position.y = 5.2 + 1.5;
   redBand.castShadow = true;
@@ -502,21 +727,19 @@ export function createIslandLighthouse(): THREE.Group {
 
   // 5. Gallery iron walkway
   const galGeo = new THREE.CylinderGeometry(1.8, 1.8, 0.3, 16);
-  const ironMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5, metalness: 0.8 });
+  const ironMat = createMobileMat({ color: 0x1e293b, roughness: 0.5, metalness: 0.8 });
   const gal = new THREE.Mesh(galGeo, ironMat);
   gal.position.y = 11.35;
   group.add(gal);
 
   // 6. Glass Lantern Room
   const glassGeo = new THREE.CylinderGeometry(1.2, 1.2, 1.6, 12);
-  const glassMat = new THREE.MeshPhysicalMaterial({
+  const glassMat = new THREE.MeshPhongMaterial({
     color: 0xffffff,
     transparent: true,
     opacity: 0.5,
-    roughness: 0.1,
-    metalness: 0.1,
-    transmission: 0.9,
-    ior: 1.5,
+    shininess: 80,
+    flatShading: true,
   });
   const glass = new THREE.Mesh(glassGeo, glassMat);
   glass.position.y = 12.3;
@@ -524,7 +747,7 @@ export function createIslandLighthouse(): THREE.Group {
 
   // 7. Rotating beacon light core
   const lampGeo = new THREE.SphereGeometry(0.4, 8, 8);
-  const lampMat = new THREE.MeshStandardMaterial({
+  const lampMat = createMobileMat({
     color: 0xfef08a,
     emissive: 0xfef08a,
     emissiveIntensity: 4.0,
@@ -536,7 +759,7 @@ export function createIslandLighthouse(): THREE.Group {
 
   // 8. Copper roof dome & spire
   const domeGeo = new THREE.ConeGeometry(1.4, 1.2, 12);
-  const domeMat = new THREE.MeshStandardMaterial({ color: 0x0f766e, roughness: 0.3, metalness: 0.7 });
+  const domeMat = createMobileMat({ color: 0x0f766e, roughness: 0.3, metalness: 0.7 });
   const dome = new THREE.Mesh(domeGeo, domeMat);
   dome.position.y = 13.7;
   group.add(dome);
@@ -554,14 +777,14 @@ export function createAlpineCottage(): THREE.Group {
 
   // 1. Stone foundation
   const baseGeo = new THREE.BoxGeometry(4.4, 0.8, 3.4);
-  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.95 });
+  const stoneMat = createMobileMat({ color: 0x64748b, roughness: 0.95 });
   const base = new THREE.Mesh(baseGeo, stoneMat);
   base.position.y = 0.4;
   group.add(base);
 
   // 2. Timber chalet walls
   const wallGeo = new THREE.BoxGeometry(4.0, 2.2, 3.0);
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 });
+  const woodMat = createMobileMat({ color: 0x78350f, roughness: 0.8 });
   const walls = new THREE.Mesh(wallGeo, woodMat);
   walls.position.y = 1.9;
   walls.castShadow = true;
@@ -569,7 +792,7 @@ export function createAlpineCottage(): THREE.Group {
 
   // 3. Overhanging pitched roof
   const roofGeo = makeFlatShadedGeo(new THREE.ConeGeometry(3.2, 1.8, 4));
-  const roofMat = new THREE.MeshStandardMaterial({
+  const roofMat = createMobileMat({
     color: 0x451a03,
     roughness: 0.6,
     metalness: 0.1,
@@ -583,7 +806,7 @@ export function createAlpineCottage(): THREE.Group {
 
   // 4. Stone chimney stack
   const chimGeo = new THREE.BoxGeometry(0.7, 2.8, 0.7);
-  const chimMat = new THREE.MeshStandardMaterial({ color: 0x57534e, roughness: 0.9 });
+  const chimMat = createMobileMat({ color: 0x57534e, roughness: 0.9 });
   const chim = new THREE.Mesh(chimGeo, chimMat);
   chim.position.set(1.4, 3.8, 0.6);
   chim.castShadow = true;
@@ -591,7 +814,7 @@ export function createAlpineCottage(): THREE.Group {
 
   // 5. Warm glowing windows
   const winGeo = new THREE.PlaneGeometry(0.8, 0.8);
-  const winMat = new THREE.MeshStandardMaterial({
+  const winMat = createMobileMat({
     color: 0xfef08a,
     emissive: 0xfbbf24,
     emissiveIntensity: 1.8,
@@ -621,7 +844,7 @@ export function createFantasyCrystal(): THREE.Group {
 
   // 1. Runic Carved Base Pedestal
   const baseGeo = new THREE.CylinderGeometry(1.6, 2.2, 1.0, 6);
-  const stoneMat = new THREE.MeshStandardMaterial({
+  const stoneMat = createMobileMat({
     color: 0x312e81,
     roughness: 0.7,
     metalness: 0.3,
@@ -633,14 +856,14 @@ export function createFantasyCrystal(): THREE.Group {
 
   // 2. Large Central Floating Crystal (Octahedron/Bipyramid)
   const cryGeo = new THREE.OctahedronGeometry(1.6, 0);
-  const cryMat = new THREE.MeshPhysicalMaterial({
+  const cryMat = new THREE.MeshPhongMaterial({
     color: 0xa855f7,
     emissive: 0x7c3aed,
     emissiveIntensity: 1.4,
-    roughness: 0.15,
-    metalness: 0.2,
-    transmission: 0.7,
-    ior: 1.8,
+    transparent: true,
+    opacity: 0.85,
+    shininess: 90,
+    flatShading: true,
   });
   const mainCrystal = new THREE.Mesh(cryGeo, cryMat);
   mainCrystal.scale.set(0.8, 2.4, 0.8);
@@ -663,7 +886,7 @@ export function createFantasyCrystal(): THREE.Group {
 
   // 5. Levitating Magic Ring
   const ringGeo = new THREE.TorusGeometry(2.0, 0.08, 8, 24);
-  const ringMat = new THREE.MeshStandardMaterial({
+  const ringMat = createMobileMat({
     color: 0x38bdf8,
     emissive: 0x38bdf8,
     emissiveIntensity: 2.5,
@@ -689,21 +912,19 @@ export function createSciFiDome(): THREE.Group {
 
   // 1. Hexagonal airlock base
   const baseGeo = new THREE.CylinderGeometry(3.6, 4.0, 0.8, 6);
-  const baseMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4, metalness: 0.7 });
+  const baseMat = createMobileMat({ color: 0x334155, roughness: 0.4, metalness: 0.7 });
   const base = new THREE.Mesh(baseGeo, baseMat);
   base.position.y = 0.4;
   group.add(base);
 
   // 2. Translucent geodesic biosphere dome
   const domeGeo = new THREE.SphereGeometry(3.2, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2);
-  const domeMat = new THREE.MeshPhysicalMaterial({
+  const domeMat = new THREE.MeshPhongMaterial({
     color: 0x67e8f9,
     transparent: true,
     opacity: 0.6,
-    roughness: 0.1,
-    metalness: 0.1,
-    transmission: 0.85,
-    ior: 1.4,
+    shininess: 80,
+    flatShading: true,
   });
   const dome = new THREE.Mesh(domeGeo, domeMat);
   dome.position.y = 0.8;
@@ -712,12 +933,12 @@ export function createSciFiDome(): THREE.Group {
   // 3. Central interior greenhouse biome
   const treeTrunk = new THREE.Mesh(
     new THREE.CylinderGeometry(0.15, 0.25, 1.6, 6),
-    new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 })
+    createMobileMat({ color: 0x78350f, roughness: 0.9 })
   );
   treeTrunk.position.y = 1.6;
   const treeFoliage = new THREE.Mesh(
     new THREE.DodecahedronGeometry(0.9),
-    new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.7, flatShading: true })
+    createMobileMat({ color: 0x22c55e, roughness: 0.7, flatShading: true })
   );
   treeFoliage.position.y = 2.6;
   group.add(treeTrunk, treeFoliage);
@@ -730,7 +951,7 @@ export function createSciFiDome(): THREE.Group {
 
   // 5. Dual Solar Power Collectors
   const solarGeo = new THREE.BoxGeometry(2.0, 0.1, 1.2);
-  const solarMat = new THREE.MeshStandardMaterial({
+  const solarMat = createMobileMat({
     color: 0x1e3a8a,
     metalness: 0.9,
     roughness: 0.2,
@@ -754,7 +975,7 @@ export function createDesertMonolith(): THREE.Group {
   const group = new THREE.Group();
   group.name = 'desert_monolith';
 
-  const stoneMat = new THREE.MeshStandardMaterial({
+  const stoneMat = createMobileMat({
     color: 0x9a3412,
     roughness: 0.9,
     metalness: 0.05,
@@ -789,7 +1010,7 @@ export function createDesertMonolith(): THREE.Group {
 
   // 5. Ancient brass brazier
   const brazGeo = new THREE.CylinderGeometry(0.5, 0.3, 0.6, 8);
-  const brazMat = new THREE.MeshStandardMaterial({
+  const brazMat = createMobileMat({
     color: 0xf59e0b,
     emissive: 0xd97706,
     emissiveIntensity: 1.5,
@@ -812,14 +1033,14 @@ export function createWindTurbine(): THREE.Group {
 
   // 1. Concrete Base Anchor
   const bGeo = new THREE.CylinderGeometry(1.0, 1.3, 0.5, 12);
-  const bMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.8 });
+  const bMat = createMobileMat({ color: 0x94a3b8, roughness: 0.8 });
   const base = new THREE.Mesh(bGeo, bMat);
   base.position.y = 0.25;
   group.add(base);
 
   // 2. Sleek Tapered Pylon Mast
   const mastGeo = new THREE.CylinderGeometry(0.2, 0.55, 14, 16);
-  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.25, metalness: 0.6 });
+  const whiteMat = createMobileMat({ color: 0xf1f5f9, roughness: 0.25, metalness: 0.6 });
   const mast = new THREE.Mesh(mastGeo, whiteMat);
   mast.position.y = 7.25;
   mast.castShadow = true;
@@ -854,7 +1075,7 @@ export function createWindTurbine(): THREE.Group {
   // 5. Red Safety Warning Strobe
   const strobe = new THREE.Mesh(
     new THREE.SphereGeometry(0.12, 8, 8),
-    new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xef4444, emissiveIntensity: 3 })
+    createMobileMat({ color: 0xef4444, emissive: 0xef4444, emissiveIntensity: 3 })
   );
   strobe.position.set(0, 14.8, 0);
   group.add(strobe);
@@ -870,7 +1091,7 @@ export function createStreetLamp(): THREE.Group {
   const group = new THREE.Group();
   group.name = 'street_lamp';
 
-  const ironMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.8 });
+  const ironMat = createMobileMat({ color: 0x1e293b, roughness: 0.4, metalness: 0.8 });
 
   // 1. Base collar
   const b = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 0.4, 8), ironMat);
@@ -896,7 +1117,7 @@ export function createStreetLamp(): THREE.Group {
   // 5. Glowing lamp bulb core
   const bulb = new THREE.Mesh(
     new THREE.SphereGeometry(0.2, 8, 8),
-    new THREE.MeshStandardMaterial({
+    createMobileMat({
       color: 0xfef08a,
       emissive: 0xfef08a,
       emissiveIntensity: 3.5,
@@ -919,7 +1140,7 @@ export function createCobblestonePath(): THREE.Group {
 
   // Base earth foundation
   const baseGeo = new THREE.BoxGeometry(4.2, 0.15, 6.2);
-  const baseMat = new THREE.MeshStandardMaterial({
+  const baseMat = createMobileMat({
     color: 0x524636,
     roughness: 0.95,
   });
@@ -929,9 +1150,9 @@ export function createCobblestonePath(): THREE.Group {
   group.add(base);
 
   // Varied cobblestone pavers
-  const stoneMat1 = new THREE.MeshStandardMaterial({ color: 0x78716c, roughness: 0.85 });
-  const stoneMat2 = new THREE.MeshStandardMaterial({ color: 0xa8a29e, roughness: 0.8 });
-  const stoneMat3 = new THREE.MeshStandardMaterial({ color: 0x57534e, roughness: 0.9 });
+  const stoneMat1 = createMobileMat({ color: 0x78716c, roughness: 0.85 });
+  const stoneMat2 = createMobileMat({ color: 0xa8a29e, roughness: 0.8 });
+  const stoneMat3 = createMobileMat({ color: 0x57534e, roughness: 0.9 });
 
   const paverConfigs = [
     { x: -1.2, z: -2.0, w: 1.4, d: 1.6, h: 0.22, mat: stoneMat1 },
@@ -967,7 +1188,7 @@ export function createWoodenBoardwalk(): THREE.Group {
   group.name = 'wooden_boardwalk';
 
   // Support stringer beams
-  const beamMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 });
+  const beamMat = createMobileMat({ color: 0x451a03, roughness: 0.9 });
   const beamGeo = new THREE.BoxGeometry(0.3, 0.4, 6.4);
   const beamL = new THREE.Mesh(beamGeo, beamMat);
   beamL.position.set(-1.4, 0.25, 0);
@@ -980,8 +1201,8 @@ export function createWoodenBoardwalk(): THREE.Group {
   group.add(beamR);
 
   // Planks
-  const plankMat1 = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.85 });
-  const plankMat2 = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.85 });
+  const plankMat1 = createMobileMat({ color: 0x78350f, roughness: 0.85 });
+  const plankMat2 = createMobileMat({ color: 0x92400e, roughness: 0.85 });
   const plankGeo = new THREE.BoxGeometry(3.4, 0.18, 0.8);
 
   for (let i = -3; i <= 3; i++) {
@@ -994,7 +1215,7 @@ export function createWoodenBoardwalk(): THREE.Group {
   }
 
   // Corner trail posts
-  const postMat = new THREE.MeshStandardMaterial({ color: 0x3f1d0b, roughness: 0.9 });
+  const postMat = createMobileMat({ color: 0x3f1d0b, roughness: 0.9 });
   const postGeo = new THREE.CylinderGeometry(0.12, 0.15, 1.6, 6);
   const postPositions = [
     [-1.5, 0.8, -2.8],
@@ -1021,8 +1242,8 @@ export function createSteppingStones(): THREE.Group {
   const group = new THREE.Group();
   group.name = 'stepping_stones';
 
-  const stoneMatA = new THREE.MeshStandardMaterial({ color: 0x71717a, roughness: 0.8 });
-  const stoneMatB = new THREE.MeshStandardMaterial({ color: 0xa1a1aa, roughness: 0.85 });
+  const stoneMatA = createMobileMat({ color: 0x71717a, roughness: 0.8 });
+  const stoneMatB = createMobileMat({ color: 0xa1a1aa, roughness: 0.85 });
 
   const stones = [
     { x: -0.6, z: -1.8, r: 0.65, h: 0.18, mat: stoneMatA },
@@ -1053,7 +1274,7 @@ export function createTrailSignpost(): THREE.Group {
   group.name = 'trail_signpost';
 
   // Cairn rock base
-  const cairnMat = new THREE.MeshStandardMaterial({ color: 0x52525b, roughness: 0.9 });
+  const cairnMat = createMobileMat({ color: 0x52525b, roughness: 0.9 });
   const cairnGeo = new THREE.DodecahedronGeometry(0.75);
   const cairn = new THREE.Mesh(cairnGeo, cairnMat);
   cairn.position.y = 0.45;
@@ -1061,7 +1282,7 @@ export function createTrailSignpost(): THREE.Group {
   group.add(cairn);
 
   // Main wooden post
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.85 });
+  const woodMat = createMobileMat({ color: 0x78350f, roughness: 0.85 });
   const postGeo = new THREE.CylinderGeometry(0.18, 0.22, 3.8, 6);
   const post = new THREE.Mesh(postGeo, woodMat);
   post.position.y = 2.1;
@@ -1069,7 +1290,7 @@ export function createTrailSignpost(): THREE.Group {
   group.add(post);
 
   // Directional signboards
-  const signMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.75 });
+  const signMat = createMobileMat({ color: 0xb45309, roughness: 0.75 });
   const signGeo = new THREE.BoxGeometry(1.6, 0.35, 0.12);
 
   const sign1 = new THREE.Mesh(signGeo, signMat);
@@ -1085,7 +1306,7 @@ export function createTrailSignpost(): THREE.Group {
   group.add(sign2);
 
   // Hanging lantern
-  const ironMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.8, roughness: 0.3 });
+  const ironMat = createMobileMat({ color: 0x1f2937, metalness: 0.8, roughness: 0.3 });
   const armGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.9);
   armGeo.rotateZ(Math.PI / 3);
   const arm = new THREE.Mesh(armGeo, ironMat);
@@ -1093,7 +1314,7 @@ export function createTrailSignpost(): THREE.Group {
   group.add(arm);
 
   const lampGeo = new THREE.OctahedronGeometry(0.28);
-  const lampMat = new THREE.MeshStandardMaterial({
+  const lampMat = createMobileMat({
     color: 0xfef08a,
     emissive: 0xf59e0b,
     emissiveIntensity: 1.8,
@@ -1107,6 +1328,24 @@ export function createTrailSignpost(): THREE.Group {
 }
 
 export const STANDARD_PALETTE: PaletteItem[] = [
+  {
+    id: 'meadow_grass',
+    name: 'Rumput Padang',
+    category: 'foliage',
+    icon: 'Sprout',
+    description: 'Rumpun rumput padang hijau segar berlapis bunga liar alami',
+    defaultScale: [1, 1, 1],
+    badge: 'Rumput',
+  },
+  {
+    id: 'flower_patch',
+    name: 'Bunga Padang',
+    category: 'foliage',
+    icon: 'Flower2',
+    description: 'Hamparan semak bunga liar warna-warni penghias padang rumput',
+    defaultScale: [1, 1, 1],
+    badge: 'Bunga',
+  },
   {
     id: 'pine_tree',
     name: 'Alpine Pine',
@@ -1274,6 +1513,10 @@ export function instantiateModel(type: string): THREE.Group {
       return createPineTree();
     case 'broadleaf_tree':
       return createBroadleafTree();
+    case 'meadow_grass':
+      return createMeadowGrass();
+    case 'flower_patch':
+      return createFlowerPatch();
     case 'stone_windmill':
       return createStoneWindmill();
     case 'island_lighthouse':
